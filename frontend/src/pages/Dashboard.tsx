@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Activity, AlertTriangle, CheckCircle, Wifi, WifiOff } from 'lucide-react'
+import { Activity, CheckCircle, Wifi, WifiOff } from 'lucide-react'
 import { dashboardApi } from '../api/dashboard'
 import StatsCard from '../components/dashboard/StatsCard'
 import Header from '../components/layout/Header'
 import AddMonitorModal from '../components/monitors/AddMonitorModal'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 
 function formatDuration(start: string, end: string | null): string {
   const diff = ((end ? new Date(end) : new Date()).getTime() - new Date(start).getTime()) / 1000
@@ -31,6 +33,8 @@ export default function Dashboard() {
   const wsRef = useRef<WebSocket | null>(null)
   const qc = useQueryClient()
   const { user } = useAuth()
+  const { tokens } = useTheme()
+  const { toast } = useToast()
 
   const { data: stats } = useQuery({ queryKey: ['dashboard-stats'], queryFn: () => dashboardApi.getStats().then(r => r.data), refetchInterval: wsConnected ? false : 30_000 })
   const { data: uptimeChart } = useQuery({ queryKey: ['uptime-chart'], queryFn: () => dashboardApi.getUptimeChart().then(r => r.data) })
@@ -40,7 +44,7 @@ export default function Dashboard() {
   // WebSocket for real-time updates
   useEffect(() => {
     if (!user) return
-    const wsUrl = `ws://${window.location.hostname}:8000/ws/${user.id}`
+    const wsUrl = `ws://${window.location.host}/ws/${user.id}`
     let ws: WebSocket
     let retryTimer: ReturnType<typeof setTimeout>
 
@@ -61,10 +65,12 @@ export default function Dashboard() {
             qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
             qc.invalidateQueries({ queryKey: ['recent-incidents'] })
             qc.invalidateQueries({ queryKey: ['monitors'] })
+            const text = msg.message || `${msg.monitor_name} is ${msg.status}`
             setLiveEvents(prev => [
-              { id: Date.now(), message: msg.message || `${msg.monitor_name} is ${msg.status}`, type: msg.status },
+              { id: Date.now(), message: text, type: msg.status },
               ...prev.slice(0, 4),
             ])
+            toast(text, msg.status === 'up' ? 'success' : 'error')
           }
         } catch { /* ignore malformed frames */ }
       }
@@ -84,10 +90,11 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <Header title="Overview" action={{ label: 'Add Monitor', onClick: () => setAddOpen(true) }} />
-        <LiveBadge connected={wsConnected} />
-      </div>
+      <Header
+        title="Overview"
+        action={{ label: 'Add Monitor', onClick: () => setAddOpen(true) }}
+        extra={<LiveBadge connected={wsConnected} />}
+      />
 
       {/* Live events ticker */}
       {liveEvents.length > 0 && (
@@ -104,12 +111,17 @@ export default function Dashboard() {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatsCard title="Total Monitors"   value={stats?.total_monitors ?? 0}                         trend={{ value: '12% vs last week', positive: true }} />
-        <StatsCard title="Up Monitors"      value={stats?.up_monitors ?? 0}     accent="green"         trend={{ value: '10% vs last week', positive: true }} />
-        <StatsCard title="Down Monitors"    value={stats?.down_monitors ?? 0}   accent="red"           trend={{ value: '5% vs last week',  positive: false }} />
-        <StatsCard title="Avg. Response"    value={stats ? `${stats.avg_response_time}ms` : '0ms'}    trend={{ value: '8% vs last week',  positive: false }} />
-        <StatsCard title="Uptime (Overall)" value={stats ? `${stats.overall_uptime}%` : '100%'} accent="green" trend={{ value: '0.02%', positive: true }} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard title="Total Monitors"   value={stats?.total_monitors ?? 0}   subtitle={`${stats?.paused_monitors ?? 0} paused`} />
+        <StatsCard title="Up Monitors"      value={stats?.up_monitors ?? 0}      accent="green" subtitle="Currently healthy" />
+        <StatsCard title="Down Monitors"    value={stats?.down_monitors ?? 0}    accent={stats?.down_monitors ? 'red' : undefined} subtitle="Currently failing" />
+        <StatsCard title="Warning"          value={stats?.warning_monitors ?? 0} accent={stats?.warning_monitors ? 'yellow' : undefined} subtitle="95–99% uptime" />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard title="Avg. Response"    value={stats ? `${stats.avg_response_time}ms` : '0ms'} subtitle="Last 24 hours" />
+        <StatsCard title="Uptime (Overall)" value={stats ? `${stats.overall_uptime}%` : '100%'} accent="green" subtitle="Last 30 days" />
+        <StatsCard title="Total Incidents"  value={stats?.total_incidents ?? 0}  accent={stats?.total_incidents ? 'red' : undefined} subtitle="All time" />
+        <StatsCard title="Incidents Today"  value={stats?.incidents_today ?? 0}  accent={stats?.incidents_today ? 'red' : undefined} subtitle="Since midnight UTC" />
       </div>
 
       {/* Charts row */}
@@ -121,11 +133,11 @@ export default function Dashboard() {
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={uptimeChart || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} />
-              <YAxis domain={[99, 100]} tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={v => `${v}%`} />
-              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }} formatter={(v: number) => [`${v}%`, 'Uptime']} />
-              <Line type="monotone" dataKey="uptime" stroke="#4f46e5" strokeWidth={2.5} dot={false} activeDot={{ r: 4, fill: '#4f46e5' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke={tokens.grid} />
+              <XAxis dataKey="date" tick={{ fill: tokens.tick, fontSize: 11 }} />
+              <YAxis domain={[99, 100]} tick={{ fill: tokens.tick, fontSize: 11 }} tickFormatter={v => `${v}%`} />
+              <Tooltip contentStyle={{ background: tokens.tooltipBg, border: `1px solid ${tokens.tooltipBorder}`, borderRadius: 8, fontSize: 12, color: tokens.tooltipText }} formatter={(v: number) => [`${v}%`, 'Uptime']} />
+              <Line type="monotone" dataKey="uptime" stroke={tokens.primary} strokeWidth={2.5} dot={false} activeDot={{ r: 4, fill: tokens.primary }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -135,14 +147,14 @@ export default function Dashboard() {
           <div className="flex-1 flex items-center justify-center relative">
             <PieChart width={200} height={200}>
               <Pie
-                data={pieData.length ? pieData : [{ name: 'No data', value: 1, color: '#334155' }]}
+                data={pieData.length ? pieData : [{ name: 'No data', value: 1, color: tokens.muted }]}
                 cx={100} cy={100} innerRadius={60} outerRadius={90} dataKey="value" strokeWidth={0}
               >
-                {(pieData.length ? pieData : [{ color: '#334155' }]).map((entry, i) => (
+                {(pieData.length ? pieData : [{ color: tokens.muted }]).map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
+              <Tooltip contentStyle={{ background: tokens.tooltipBg, border: `1px solid ${tokens.tooltipBorder}`, borderRadius: 8, color: tokens.tooltipText }} />
             </PieChart>
             {totalPie > 0 && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -210,11 +222,11 @@ export default function Dashboard() {
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={rtChart || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={v => `${v}ms`} />
-              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }} formatter={(v: number) => [`${v}ms`, 'Response Time']} />
-              <Line type="monotone" dataKey="response_time" stroke="#16a34a" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke={tokens.grid} />
+              <XAxis dataKey="date" tick={{ fill: tokens.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: tokens.tick, fontSize: 11 }} tickFormatter={v => `${v}ms`} />
+              <Tooltip contentStyle={{ background: tokens.tooltipBg, border: `1px solid ${tokens.tooltipBorder}`, borderRadius: 8, fontSize: 12, color: tokens.tooltipText }} formatter={(v: number) => [`${v}ms`, 'Response Time']} />
+              <Line type="monotone" dataKey="response_time" stroke={tokens.success} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

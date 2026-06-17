@@ -36,13 +36,25 @@ def get_stats(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     uptimes = [float(m.uptime_percentage) for m in monitors if m.uptime_percentage]
     overall = f"{(sum(uptimes) / len(uptimes)):.2f}" if uptimes else "100.00"
 
+    warning = sum(1 for m in monitors if not m.is_paused and 95 <= float(m.uptime_percentage or 100) < 99)
+
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    total_incidents = db.query(Incident).filter(Incident.monitor_id.in_(monitor_ids)).count() if monitor_ids else 0
+    incidents_today = db.query(Incident).filter(
+        Incident.monitor_id.in_(monitor_ids),
+        Incident.outage_start_time >= today_start,
+    ).count() if monitor_ids else 0
+
     return DashboardStats(
         total_monitors=total,
         up_monitors=up,
         down_monitors=down,
         paused_monitors=paused,
+        warning_monitors=warning,
         avg_response_time=avg_rt,
         overall_uptime=overall,
+        total_incidents=total_incidents,
+        incidents_today=incidents_today,
     )
 
 

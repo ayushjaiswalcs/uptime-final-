@@ -26,10 +26,10 @@ const TESTIMONIALS = [
 ]
 
 const FAQS = [
-  { q: 'How quickly do you detect outages?', a: 'We check your services as frequently as every 30 seconds on our paid plans, and every 5 minutes on the free plan.' },
+  { q: 'How quickly do you detect outages?', a: 'We check your services as frequently as every 30 seconds, with a default of every 5 minutes.' },
   { q: 'What notification channels are supported?', a: 'We support Email, Telegram, Slack, Discord, and SMS notifications.' },
   { q: 'Can I monitor APIs, not just websites?', a: 'Yes! You can monitor any HTTP/HTTPS endpoint with custom methods, headers, and request bodies.' },
-  { q: 'Do you offer a free plan?', a: 'Yes — our free plan includes 10 monitors with 5-minute check intervals and 1 status page, forever.' },
+  { q: 'How much does it cost?', a: 'Everything is included for free — unlimited monitors, all notification channels, and status pages.' },
   { q: 'How do status pages work?', a: 'Create a branded public status page at /status/your-slug. Customers can subscribe to updates and see real-time service health.' },
 ]
 

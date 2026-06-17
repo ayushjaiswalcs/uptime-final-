@@ -4,9 +4,12 @@ from typing import List
 from core.deps import get_db, get_current_user
 from models.user import User
 from models.monitor import Monitor
+from models.monitor_log import MonitorLog
 from models.status_page import StatusPage
 from models.incident import Incident
 from schemas.dashboard import StatusPageCreate, StatusPageOut
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import func
 import re
 
 router = APIRouter(prefix="/status-pages", tags=["status-pages"])
@@ -55,9 +58,26 @@ def get_public_status_page(slug: str, db: Session = Depends(get_db)):
         .all()
     )
 
-    all_up = all(m.current_status == "up" for m in monitors)
+    # Only public-facing monitors are considered "all up" (paused ones are ignored).
+    active = [m for m in monitors if not m.is_paused]
+    all_up = all(m.current_status == "up" for m in active) if active else True
     uptimes = [float(m.uptime_percentage) for m in monitors if m.uptime_percentage]
     avg_uptime = f"{(sum(uptimes) / len(uptimes)):.2f}" if uptimes else "100.00"
+
+    # Average response time across all checks in the last 24h (real data, not a placeholder).
+    monitor_ids = [m.id for m in monitors]
+    avg_rt = None
+    if monitor_ids:
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        avg_rt = (
+            db.query(func.avg(MonitorLog.response_time))
+            .filter(
+                MonitorLog.monitor_id.in_(monitor_ids),
+                MonitorLog.checked_at >= since,
+                MonitorLog.is_up.is_(True),
+            )
+            .scalar()
+        )
 
     return {
         "company_name": page.company_name,
@@ -65,11 +85,13 @@ def get_public_status_page(slug: str, db: Session = Depends(get_db)):
         "description": page.description,
         "overall_status": "operational" if all_up else "degraded",
         "avg_uptime": avg_uptime,
+        "avg_response_time": round(float(avg_rt), 1) if avg_rt is not None else None,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
         "monitors": [
             {
                 "id": m.id,
                 "name": m.monitor_name,
-                "status": m.current_status,
+                "status": "paused" if m.is_paused else m.current_status,
                 "uptime": m.uptime_percentage,
             }
             for m in monitors

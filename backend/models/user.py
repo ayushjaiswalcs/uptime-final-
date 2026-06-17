@@ -4,7 +4,6 @@ from sqlalchemy.sql import func
 from database import Base
 import enum
 
-
 class UserRole(str, enum.Enum):
     admin = "admin"
     owner = "owner"
@@ -27,7 +26,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(String(50), default="owner")
     subscription_plan = Column(String(50), default="free")
-    is_verified = Column(String(10), default="false")
+    is_verified = Column(Boolean, default=False, server_default="false")
     avatar_url = Column(String(500), nullable=True)
     # 2FA (TOTP)
     totp_secret = Column(String(64), nullable=True)

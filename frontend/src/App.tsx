@@ -3,6 +3,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { DemoProvider, useDemo } from './context/DemoContext'
+import { ThemeProvider } from './context/ThemeContext'
+import { ToastProvider } from './context/ToastContext'
+import ThemeToggle from './components/ui/ThemeToggle'
+import ToastContainer from './components/ui/Toast'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -11,6 +15,7 @@ import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
 import Dashboard from './pages/Dashboard'
 import Monitors from './pages/Monitors'
+import MonitorDetail from './pages/MonitorDetail'
 import Incidents from './pages/Incidents'
 import StatusPages from './pages/StatusPages'
 import Notifications from './pages/Notifications'
@@ -47,7 +52,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   const { isDemoMode } = useDemo()
   if (loading && !isDemoMode) return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+    <div className="min-h-screen app-shell flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
     </div>
   )
@@ -73,7 +78,8 @@ function AppRoutes() {
       {(
         [
           ['/dashboard',    <Dashboard />],
-          ['/monitors',     <Monitors />],
+          ['/monitors',          <Monitors />],
+          ['/monitors/:id',     <MonitorDetail />],
           ['/incidents',    <Incidents />],
           ['/status-pages', <StatusPages />],
           ['/notifications',<Notifications />],
@@ -99,12 +105,18 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <DemoProvider>
-        <AuthProvider>
-          <DemoSimulator />
-          <AppRoutes />
-        </AuthProvider>
-      </DemoProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <DemoProvider>
+            <AuthProvider>
+              <DemoSimulator />
+              <AppRoutes />
+              <ThemeToggle />
+              <ToastContainer />
+            </AuthProvider>
+          </DemoProvider>
+        </ToastProvider>
+      </ThemeProvider>
     </BrowserRouter>
   )
 }

@@ -1,16 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { User, Lock, CreditCard, CheckCircle, Smartphone, ShieldCheck, ShieldOff, QrCode } from 'lucide-react'
+import { User, Lock, CheckCircle, Smartphone, ShieldCheck, ShieldOff, QrCode } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { authApi } from '../api/auth'
 import client from '../api/client'
 import Header from '../components/layout/Header'
-
-const PLANS = [
-  { id: 'free',       name: 'Free',       price: '$0',  period: 'forever', features: ['10 Monitors', '5 Min Interval', 'Email Alerts', '1 Status Page'] },
-  { id: 'pro',        name: 'Pro',        price: '$9',  period: 'month',   popular: true, features: ['100 Monitors', '1 Min Interval', 'All Alert Channels', '5 Status Pages', 'Advanced Reports'] },
-  { id: 'enterprise', name: 'Enterprise', price: '$29', period: 'month',   features: ['Unlimited Monitors', '30s Interval', 'All Channels', 'Unlimited Pages', 'Teams', 'Audit Logs'] },
-]
 
 export default function Settings() {
   const { user, updateUser } = useAuth()
@@ -65,8 +59,8 @@ export default function Settings() {
     <div className="p-6 space-y-6">
       <Header title="Settings" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-5">
+      <div className="max-w-3xl">
+        <div className="space-y-5">
           {/* Profile */}
           <div className="glass-card p-5">
             <div className="flex items-center gap-2 mb-5">
@@ -175,41 +169,6 @@ export default function Settings() {
                 </button>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Plan */}
-        <div className="glass-card p-5 h-fit">
-          <div className="flex items-center gap-2 mb-5">
-            <CreditCard className="w-5 h-5 text-primary-400" />
-            <h2 className="font-semibold text-white">Current Plan</h2>
-          </div>
-          <div className="space-y-3">
-            {PLANS.map(plan => (
-              <div key={plan.id} className={`p-4 rounded-xl border transition-all ${user?.subscription_plan === plan.id ? 'border-primary-500 bg-primary-500/10' : 'border-slate-700 hover:border-slate-600'}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-white">{plan.name}</h3>
-                    {(plan as any).popular && <span className="text-xs px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-400">Popular</span>}
-                  </div>
-                  <div className="text-right">
-                    <span className="text-lg font-bold text-white">{plan.price}</span>
-                    <span className="text-xs text-slate-500">/{plan.period}</span>
-                  </div>
-                </div>
-                <ul className="space-y-1">
-                  {plan.features.slice(0, 3).map(f => (
-                    <li key={f} className="text-xs text-slate-400 flex items-center gap-1.5">
-                      <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />{f}
-                    </li>
-                  ))}
-                </ul>
-                {user?.subscription_plan === plan.id
-                  ? <span className="mt-3 block text-center text-xs font-semibold text-primary-400">Current Plan</span>
-                  : <button className="mt-3 w-full py-1.5 text-xs font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors">Upgrade</button>
-                }
-              </div>
-            ))}
           </div>
         </div>
       </div>

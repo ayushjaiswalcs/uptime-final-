@@ -165,14 +165,14 @@ def verify_email(data: VerifyEmailRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired verification link")
-    user.is_verified = "true"
+    user.is_verified = True
     db.commit()
     return {"message": "Email verified successfully"}
 
 
 @router.post("/resend-verification")
 def resend_verification(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if current_user.is_verified == "true":
+    if current_user.is_verified:
         return {"message": "Your email is already verified"}
     token = _send_verification_email(current_user)
     response = {"message": "Verification email sent"}

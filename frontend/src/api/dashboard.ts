@@ -6,8 +6,11 @@ export interface DashboardStats {
   up_monitors: number
   down_monitors: number
   paused_monitors: number
+  warning_monitors: number
   avg_response_time: number
   overall_uptime: string
+  total_incidents: number
+  incidents_today: number
 }
 
 export interface ChartPoint {

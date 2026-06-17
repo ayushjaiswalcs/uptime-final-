@@ -7,8 +7,11 @@ class DashboardStats(BaseModel):
     up_monitors: int
     down_monitors: int
     paused_monitors: int
+    warning_monitors: int
     avg_response_time: float
     overall_uptime: str
+    total_incidents: int
+    incidents_today: int
 
 
 class UptimeDataPoint(BaseModel):

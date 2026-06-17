@@ -52,9 +52,18 @@ class MonitorOut(BaseModel):
     failure_count: int = 0
     created_at: datetime
     last_checked_at: Optional[datetime] = None
+    owner_name: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        instance = super().model_validate(obj, *args, **kwargs)
+        # Pick up the transient _owner_name set by the admin list endpoint.
+        if hasattr(obj, '_owner_name') and instance.owner_name is None:
+            instance.owner_name = obj._owner_name
+        return instance
 
 
 class MonitorLogOut(BaseModel):

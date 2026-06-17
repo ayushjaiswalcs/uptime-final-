@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Globe, Wifi, Radio, Shield, Search, Server } from 'lucide-react'
 import Modal from '../ui/Modal'
-import { monitorsApi, type MonitorCreate } from '../../api/monitors'
+import { monitorsApi, type MonitorCreate, type Monitor } from '../../api/monitors'
 import { useQueryClient } from '@tanstack/react-query'
 
 const MONITOR_TYPES = [
@@ -24,35 +24,92 @@ const INTERVALS = [
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH']
 const DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT']
 
-interface Props { isOpen: boolean; onClose: () => void }
+const EMPTY_FORM: MonitorCreate = {
+  monitor_name: '',
+  target_url: '',
+  monitor_type: 'http',
+  interval: 300,
+  timeout: 10,
+  http_method: 'GET',
+  expected_status_code: 200,
+  alert_threshold: 1,
+  keyword: '',
+  dns_record_type: 'A',
+}
 
-export default function AddMonitorModal({ isOpen, onClose }: Props) {
+interface Props {
+  isOpen: boolean
+  onClose: () => void
+  /** When provided the modal switches to edit mode and pre-fills with this monitor. */
+  editMonitor?: Monitor | null
+}
+
+export default function AddMonitorModal({ isOpen, onClose, editMonitor }: Props) {
   const qc = useQueryClient()
-  const [form, setForm] = useState<MonitorCreate>({
-    monitor_name: '',
-    target_url: '',
-    monitor_type: 'http',
-    interval: 300,
-    timeout: 10,
-    http_method: 'GET',
-    expected_status_code: 200,
-    alert_threshold: 1,
-  })
+  const isEdit = !!editMonitor
+  const [form, setForm] = useState<MonitorCreate>(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Sync form whenever the modal opens or the monitor being edited changes.
+  useEffect(() => {
+    if (!isOpen) return
+    setError('')
+    if (editMonitor) {
+      setForm({
+        monitor_name: editMonitor.monitor_name,
+        target_url: editMonitor.target_url,
+        monitor_type: editMonitor.monitor_type,
+        interval: editMonitor.interval,
+        timeout: editMonitor.timeout,
+        http_method: editMonitor.http_method,
+        expected_status_code: editMonitor.expected_status_code,
+        alert_threshold: editMonitor.alert_threshold ?? 1,
+        keyword: editMonitor.keyword ?? '',
+        dns_record_type: editMonitor.dns_record_type ?? 'A',
+      })
+    } else {
+      setForm(EMPTY_FORM)
+    }
+  }, [isOpen, editMonitor])
+
+  const validate = (): string | null => {
+    if (!form.monitor_name.trim()) return 'Monitor name is required'
+    if (!form.target_url.trim()) return 'Target URL / address is required'
+    if ((form.monitor_type === 'http' || form.monitor_type === 'keyword') &&
+        !/^https?:\/\//i.test(form.target_url.trim())) {
+      return 'HTTP monitors require a URL starting with http:// or https://'
+    }
+    if (form.monitor_type === 'keyword' && !form.keyword?.trim()) {
+      return 'Enter the keyword to check for'
+    }
+    if (form.expected_status_code < 100 || form.expected_status_code > 599) {
+      return 'Expected status code must be between 100 and 599'
+    }
+    return null
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const validationError = validate()
+    if (validationError) { setError(validationError); return }
     setError('')
     setLoading(true)
     try {
-      await monitorsApi.create(form)
+      if (editMonitor) {
+        // monitor_type is immutable on the backend update schema, so we omit it.
+        const { monitor_type, ...updatable } = form
+        void monitor_type
+        await monitorsApi.update(editMonitor.id, updatable)
+      } else {
+        await monitorsApi.create(form)
+      }
       qc.invalidateQueries({ queryKey: ['monitors'] })
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
       onClose()
-      setForm({ monitor_name: '', target_url: '', monitor_type: 'http', interval: 300, timeout: 10, http_method: 'GET', expected_status_code: 200, alert_threshold: 1, keyword: '', dns_record_type: 'A' })
+      setForm(EMPTY_FORM)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to create monitor')
+      setError(err.response?.data?.detail || `Failed to ${isEdit ? 'update' : 'create'} monitor`)
     } finally {
       setLoading(false)
     }
@@ -62,26 +119,32 @@ export default function AddMonitorModal({ isOpen, onClose }: Props) {
   const isDns  = form.monitor_type === 'dns'
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add New Monitor" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? 'Edit Monitor' : 'Add New Monitor'} size="lg">
       <div className="mb-5">
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Monitor Type</p>
         <div className="grid grid-cols-3 gap-2">
-          {MONITOR_TYPES.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setForm(f => ({ ...f, monitor_type: t.id }))}
-              className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all text-xs font-medium ${
-                form.monitor_type === t.id
-                  ? 'border-primary-500 bg-primary-500/10 text-primary-400'
-                  : 'border-slate-600 hover:border-slate-500 text-slate-400'
-              }`}
-            >
-              <t.icon className="w-5 h-5" />
-              <span>{t.label}</span>
-              <span className="text-slate-500 text-[10px] font-normal leading-tight text-center">{t.desc}</span>
-            </button>
-          ))}
+          {MONITOR_TYPES.map((t) => {
+            const selected = form.monitor_type === t.id
+            return (
+              <button
+                key={t.id}
+                type="button"
+                // Type can't be changed after creation (changes check semantics).
+                disabled={isEdit && !selected}
+                onClick={() => !isEdit && setForm(f => ({ ...f, monitor_type: t.id }))}
+                title={isEdit ? 'Monitor type cannot be changed after creation' : undefined}
+                className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all text-xs font-medium ${
+                  selected
+                    ? 'border-primary-500 bg-primary-500/10 text-primary-400'
+                    : 'border-slate-600 hover:border-slate-500 text-slate-400'
+                } ${isEdit && !selected ? 'opacity-40 cursor-not-allowed hover:border-slate-600' : ''}`}
+              >
+                <t.icon className="w-5 h-5" />
+                <span>{t.label}</span>
+                <span className="text-slate-500 text-[10px] font-normal leading-tight text-center">{t.desc}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -173,7 +236,7 @@ export default function AddMonitorModal({ isOpen, onClose }: Props) {
 
         <div className="flex gap-3 pt-2">
           <button type="submit" disabled={loading} className="btn-primary flex-1">
-            {loading ? 'Creating...' : 'Create Monitor'}
+            {loading ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Monitor')}
           </button>
           <button type="button" onClick={onClose} className="btn-secondary px-6">Cancel</button>
         </div>

@@ -4,7 +4,7 @@ import DemoBanner from '../demo/DemoBanner'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-slate-900">
+    <div className="flex min-h-screen app-shell">
       <Sidebar />
       <main className="flex-1 ml-60 min-h-screen overflow-x-hidden">
         <DemoBanner />

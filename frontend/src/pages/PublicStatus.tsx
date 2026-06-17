@@ -11,8 +11,17 @@ interface PublicData {
   description: string
   overall_status: string
   avg_uptime: string
+  avg_response_time: number | null
+  last_updated: string
   monitors: { id: number; name: string; status: string; uptime: string }[]
   incidents: { id: number; started_at: string; resolved_at: string | null; status: string; error: string }[]
+}
+
+function timeAgo(iso: string): string {
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
+  if (secs < 60) return `${secs}s ago`
+  if (secs < 3600) return `${Math.round(secs / 60)}m ago`
+  return `${Math.round(secs / 3600)}h ago`
 }
 
 function UptimeBar({ uptime }: { uptime: string }) {
@@ -34,9 +43,16 @@ export default function PublicStatus() {
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    axios.get(`${API_BASE}/status-pages/public/${slug}`)
-      .then(r => setData(r.data))
-      .catch(() => setError(true))
+    let cancelled = false
+    const load = () => {
+      axios.get(`${API_BASE}/status-pages/public/${slug}`)
+        .then(r => { if (!cancelled) setData(r.data) })
+        .catch(() => { if (!cancelled) setError(true) })
+    }
+    load()
+    // Re-fetch every 60s so visitors always see fresh 5-minute check data.
+    const timer = setInterval(load, 60_000)
+    return () => { cancelled = true; clearInterval(timer) }
   }, [slug])
 
   if (error) return (
@@ -120,7 +136,7 @@ export default function PublicStatus() {
             <p className="text-xs text-slate-500 mt-1">Incidents (90 days)</p>
           </div>
           <div className="glass-card p-4 text-center">
-            <p className="text-2xl font-bold text-white">—</p>
+            <p className="text-2xl font-bold text-white">{data.avg_response_time != null ? `${data.avg_response_time}ms` : '—'}</p>
             <p className="text-xs text-slate-500 mt-1">Response Time (avg)</p>
           </div>
         </div>
@@ -150,7 +166,8 @@ export default function PublicStatus() {
         )}
 
         <p className="text-center text-xs text-slate-600 pb-4">
-          Powered by <span className="text-primary-500 font-semibold">Uptime</span> · Updated 1 min ago
+          Powered by <span className="text-primary-500 font-semibold">Uptime</span>
+          {data.last_updated && ` · Updated ${timeAgo(data.last_updated)}`}
         </p>
       </div>
     </div>

@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 import httpx
 
 from core.config import settings
+from core.ws_manager import manager as ws_manager
 from database import SessionLocal
 from models.monitor import Monitor
 from models.monitor_log import MonitorLog
@@ -312,6 +313,12 @@ def check_monitor(monitor_id: int) -> None:
 
         is_up, response_time, http_status, error = run_check(monitor)
         now = datetime.now(timezone.utc)
+        logger.info(
+            "Checked monitor=%s name=%r type=%s -> %s (%sms, http=%s)%s",
+            monitor.id, monitor.monitor_name, monitor.monitor_type,
+            "UP" if is_up else "DOWN", response_time, http_status,
+            f" error={error!r}" if error else "",
+        )
 
         db.add(MonitorLog(
             monitor_id=monitor.id,
@@ -343,6 +350,10 @@ def check_monitor(monitor_id: int) -> None:
         if not is_up and monitor.failure_count == threshold:
             db.add(Incident(monitor_id=monitor.id, error_message=error, incident_status="ongoing", outage_start_time=now))
             db.flush()
+            logger.warning(
+                "Incident OPENED monitor=%s name=%r after %s consecutive failure(s): %s",
+                monitor.id, monitor.monitor_name, threshold, error,
+            )
             _send_alerts(db, monitor, "down", error)
             _deliver_webhooks(db, monitor.user_id, "monitor.down", {
                 "event": "monitor.down",
@@ -358,6 +369,10 @@ def check_monitor(monitor_id: int) -> None:
             if open_incident:
                 open_incident.incident_status = "resolved"
                 open_incident.recovery_time = now
+                logger.info(
+                    "Incident RESOLVED monitor=%s name=%r (incident_id=%s)",
+                    monitor.id, monitor.monitor_name, open_incident.id,
+                )
             _send_alerts(db, monitor, "up", None)
             _deliver_webhooks(db, monitor.user_id, "monitor.up", {
                 "event": "monitor.up",
@@ -367,9 +382,22 @@ def check_monitor(monitor_id: int) -> None:
             })
 
         db.commit()
+        logger.debug("Persisted check result for monitor %s", monitor_id)
+
+        # Push live update to any open dashboard tabs for this user.
+        ws_manager.broadcast_from_thread(monitor.user_id, {
+            "type": "monitor_status",
+            "monitor_id": monitor.id,
+            "monitor_name": monitor.monitor_name,
+            "status": monitor.current_status,
+            "uptime": monitor.uptime_percentage,
+            "message": f"{monitor.monitor_name} is {'UP' if is_up else 'DOWN'}",
+        })
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        logger.warning("Check failed for monitor %s: %s", monitor_id, exc)
+        # exc_info=True logs the full traceback; the loop keeps running so one
+        # bad monitor never takes the whole engine down.
+        logger.error("Check failed for monitor %s: %s", monitor_id, exc, exc_info=True)
     finally:
         db.close()
 

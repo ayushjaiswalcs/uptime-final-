@@ -6,7 +6,7 @@ interface StatsCardProps {
   value: string | number
   subtitle?: string
   trend?: { value: string; positive: boolean }
-  accent?: 'red' | 'green' | 'blue' | 'amber'
+  accent?: 'red' | 'green' | 'blue' | 'amber' | 'yellow'
 }
 
 export default function StatsCard({ title, value, subtitle, trend, accent }: StatsCardProps) {
@@ -15,15 +15,16 @@ export default function StatsCard({ title, value, subtitle, trend, accent }: Sta
     green: 'text-green-400',
     blue: 'text-primary-400',
     amber: 'text-amber-400',
+    yellow: 'text-yellow-400',
   }
 
   return (
     <div className="stat-card">
-      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
-      <p className={clsx('text-3xl font-bold', accent ? accentClasses[accent] : 'text-white')}>
+      <p className="text-xs font-semibold text-muted uppercase tracking-wider">{title}</p>
+      <p className={clsx('text-3xl font-bold', accent ? accentClasses[accent] : 'app-title')}>
         {value}
       </p>
-      {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-muted">{subtitle}</p>}
       {trend && (
         <div className={clsx('flex items-center gap-1 text-xs font-medium', trend.positive ? 'text-green-400' : 'text-red-400')}>
           {trend.positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}

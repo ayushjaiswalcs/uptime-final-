@@ -19,6 +19,7 @@ export interface Monitor {
   failure_count: number
   created_at: string
   last_checked_at: string | null
+  owner_name: string | null
 }
 
 export interface MonitorLog {
@@ -46,8 +47,38 @@ export interface MonitorCreate {
   alert_threshold?: number
 }
 
+export interface MetricBucket {
+  timestamp: string
+  label: string
+  uptime: number
+  response_time: number
+  up_count: number
+  total_count: number
+}
+
+export interface IncidentEntry {
+  id: number
+  started_at: string
+  resolved_at: string | null
+  status: string
+  error: string | null
+  duration_mins: number
+}
+
+export interface MonitorMetrics {
+  range: string
+  total_checks: number
+  up_checks: number
+  down_checks: number
+  avg_response_time: number
+  incident_count: number
+  buckets: MetricBucket[]
+  incidents: IncidentEntry[]
+}
+
 export const monitorsApi = {
-  list: () => client.get<Monitor[]>('/monitors'),
+  list: (all = false) => client.get<Monitor[]>('/monitors', { params: all ? { all: true } : {} }),
+  get: (id: number) => client.get<Monitor>(`/monitors/${id}`),
   create: (data: MonitorCreate) => client.post<Monitor>('/monitors', data),
   update: (id: number, data: Partial<MonitorCreate> & { is_paused?: boolean }) =>
     client.put<Monitor>(`/monitors/${id}`, data),
@@ -55,4 +86,6 @@ export const monitorsApi = {
   pause: (id: number) => client.post(`/monitors/${id}/pause`),
   getLogs: (id: number, hours = 24) =>
     client.get<MonitorLog[]>(`/monitors/${id}/logs`, { params: { hours } }),
+  getMetrics: (id: number, range: '1d' | '7d' | '30d' = '1d') =>
+    client.get<MonitorMetrics>(`/monitors/${id}/metrics`, { params: { range } }),
 }
