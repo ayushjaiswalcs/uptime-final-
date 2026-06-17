@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Globe, Wifi, Radio, Shield, Search, Server } from 'lucide-react'
+import { Globe, Wifi, Radio, Shield, Search, Server, Building2, ChevronDown } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { monitorsApi, type MonitorCreate, type Monitor } from '../../api/monitors'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
+import { orgsApi } from '../../api/organizations'
+import { teamsApi } from '../../api/teams'
+import { projectsApi } from '../../api/projects'
 
 const MONITOR_TYPES = [
   { id: 'http',    label: 'HTTP(s)',  icon: Globe,   desc: 'Websites & REST APIs' },
@@ -50,11 +53,25 @@ export default function AddMonitorModal({ isOpen, onClose, editMonitor }: Props)
   const [form, setForm] = useState<MonitorCreate>(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showAssignment, setShowAssignment] = useState(false)
+
+  const { data: orgs = [] } = useQuery({ queryKey: ['orgs'], queryFn: () => orgsApi.list().then(r => r.data), enabled: isOpen })
+  const { data: teams = [] } = useQuery({
+    queryKey: ['teams', form.org_id],
+    queryFn: () => form.org_id ? teamsApi.list(form.org_id).then(r => r.data) : [],
+    enabled: !!form.org_id && isOpen,
+  })
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects', form.org_id, form.team_id],
+    queryFn: () => form.org_id ? projectsApi.list(form.org_id, form.team_id).then(r => r.data) : [],
+    enabled: !!form.org_id && isOpen,
+  })
 
   // Sync form whenever the modal opens or the monitor being edited changes.
   useEffect(() => {
     if (!isOpen) return
     setError('')
+    setShowAssignment(false)
     if (editMonitor) {
       setForm({
         monitor_name: editMonitor.monitor_name,
@@ -231,6 +248,53 @@ export default function AddMonitorModal({ isOpen, onClose, editMonitor }: Props)
             </select>
           </div>
         </div>
+
+        {/* Team/Project Assignment (collapsible) */}
+        {!isEdit && (
+          <div className="border border-slate-700/50 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowAssignment(!showAssignment)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-800/40 hover:bg-slate-800/60 text-sm text-slate-400 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Assign to Team / Project <span className="text-slate-600 font-normal">(optional)</span></span>
+                {form.org_id && <span className="text-xs text-primary-400 bg-primary-500/10 px-1.5 rounded">assigned</span>}
+              </div>
+              <ChevronDown className={`w-4 h-4 transition-transform ${showAssignment ? 'rotate-180' : ''}`} />
+            </button>
+            {showAssignment && (
+              <div className="p-4 space-y-3 bg-slate-800/20">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Organization</label>
+                  <select className="input-field text-sm" value={form.org_id || ''} onChange={e => setForm(f => ({ ...f, org_id: e.target.value ? Number(e.target.value) : undefined, team_id: undefined, project_id: undefined }))}>
+                    <option value="">— None —</option>
+                    {orgs.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                </div>
+                {form.org_id && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">Team</label>
+                      <select className="input-field text-sm" value={form.team_id || ''} onChange={e => setForm(f => ({ ...f, team_id: e.target.value ? Number(e.target.value) : undefined, project_id: undefined }))}>
+                        <option value="">— None —</option>
+                        {teams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">Project</label>
+                      <select className="input-field text-sm" value={form.project_id || ''} onChange={e => setForm(f => ({ ...f, project_id: e.target.value ? Number(e.target.value) : undefined }))}>
+                        <option value="">— None —</option>
+                        {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-2.5 rounded-xl">{error}</p>}
 

@@ -16,6 +16,10 @@ class MonitorCreate(BaseModel):
     keyword: Optional[str] = None
     dns_record_type: Optional[str] = None
     alert_threshold: int = 1
+    # Team / project assignment (optional)
+    org_id: Optional[int] = None
+    team_id: Optional[int] = None
+    project_id: Optional[int] = None
 
 
 class MonitorUpdate(BaseModel):
@@ -74,6 +78,10 @@ class MonitorLogOut(BaseModel):
     is_up: bool
     error_message: Optional[str]
     checked_at: datetime
+    # Ping-specific (None for all other monitor types)
+    packet_loss: Optional[float] = None
+    ping_min_ms: Optional[float] = None
+    ping_max_ms: Optional[float] = None
 
     class Config:
         from_attributes = True

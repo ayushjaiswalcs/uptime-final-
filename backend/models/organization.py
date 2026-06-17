@@ -16,6 +16,8 @@ class Organization(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     members = relationship("TeamMember", back_populates="organization", cascade="all, delete-orphan")
+    teams = relationship("Team", back_populates="organization", cascade="all, delete-orphan")
+    projects = relationship("Project", back_populates="organization", cascade="all, delete-orphan")
     owner = relationship("User", foreign_keys=[owner_id])
 
 

@@ -208,6 +208,101 @@ def get_monitor_metrics(
     }
 
 
+@router.get("/{monitor_id}/ping-stats")
+def get_ping_stats(
+    monitor_id: int,
+    hours: int = 24,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Ping-specific time-series endpoint.
+
+    Returns per-check packet_loss%, min/avg/max latency, last success,
+    last failure, and an error-reason breakdown — everything the ping
+    detail panels need.
+    """
+    if current_user.role in ("admin", "owner"):
+        monitor = db.query(Monitor).filter(Monitor.id == monitor_id).first()
+    else:
+        monitor = db.query(Monitor).filter(
+            Monitor.id == monitor_id, Monitor.user_id == current_user.id
+        ).first()
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    if monitor.monitor_type != "ping":
+        raise HTTPException(status_code=400, detail="ping-stats only available for Ping monitors")
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    logs = (
+        db.query(MonitorLog)
+        .filter(MonitorLog.monitor_id == monitor_id, MonitorLog.checked_at >= since)
+        .order_by(MonitorLog.checked_at)
+        .all()
+    )
+
+    # ── Build per-check series ──────────────────────────────────────────────
+    series = []
+    for log in logs:
+        ts = log.checked_at
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        # Derive packet_loss for legacy rows that pre-date the column
+        loss = log.packet_loss
+        if loss is None:
+            loss = 0.0 if log.is_up else 100.0
+        series.append({
+            "timestamp": ts.isoformat(),
+            "is_up": log.is_up,
+            "avg_ms": log.response_time,
+            "min_ms": log.ping_min_ms,
+            "max_ms": log.ping_max_ms,
+            "packet_loss": loss,
+            "error": log.error_message,
+        })
+
+    # ── Last success / failure ──────────────────────────────────────────────
+    last_success = next((s for s in reversed(series) if s["is_up"]), None)
+    last_failure = next((s for s in reversed(series) if not s["is_up"]), None)
+
+    # ── Aggregate stats ─────────────────────────────────────────────────────
+    avg_latencies = [s["avg_ms"] for s in series if s["avg_ms"] is not None]
+    min_latencies = [s["min_ms"] for s in series if s["min_ms"] is not None]
+    max_latencies = [s["max_ms"] for s in series if s["max_ms"] is not None]
+    losses = [s["packet_loss"] for s in series if s["packet_loss"] is not None]
+
+    def _avg(lst):
+        return round(sum(lst) / len(lst), 2) if lst else None
+
+    # ── Error reason breakdown (top 5) ─────────────────────────────────────
+    error_counts: dict = {}
+    for s in series:
+        if not s["is_up"] and s["error"]:
+            # Normalise: first 80 chars, strip trailing period/whitespace
+            key = s["error"].rstrip(". ")[:80]
+            error_counts[key] = error_counts.get(key, 0) + 1
+
+    error_breakdown = [
+        {"reason": k, "count": v}
+        for k, v in sorted(error_counts.items(), key=lambda x: -x[1])[:5]
+    ]
+
+    return {
+        "hours": hours,
+        "total_checks": len(series),
+        "up_checks": sum(1 for s in series if s["is_up"]),
+        "down_checks": sum(1 for s in series if not s["is_up"]),
+        "avg_packet_loss": _avg(losses),
+        "overall_avg_ms": _avg(avg_latencies),
+        "overall_min_ms": round(min(min_latencies), 2) if min_latencies else None,
+        "overall_max_ms": round(max(max_latencies), 2) if max_latencies else None,
+        "last_success": last_success,
+        "last_failure": last_failure,
+        "error_breakdown": error_breakdown,
+        "series": series,
+    }
+
+
 @router.get("/{monitor_id}/logs", response_model=List[MonitorLogOut])
 def get_monitor_logs(
     monitor_id: int,

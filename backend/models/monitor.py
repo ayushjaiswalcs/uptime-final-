@@ -10,6 +10,8 @@ class Monitor(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     monitor_name = Column(String(255), nullable=False)
     target_url = Column(Text, nullable=False)

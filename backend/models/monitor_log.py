@@ -16,10 +16,14 @@ class MonitorLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     monitor_id = Column(Integer, ForeignKey("monitors.id", ondelete="CASCADE"), nullable=False)
-    response_time = Column(Float, nullable=True)  # ms
+    response_time = Column(Float, nullable=True)  # ms (avg for ping)
     http_status = Column(Integer, nullable=True)
     is_up = Column(Boolean, nullable=False)
     error_message = Column(String(500), nullable=True)
     checked_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Ping-specific columns (NULL for all other monitor types)
+    packet_loss = Column(Float, nullable=True)   # 0–100 %
+    ping_min_ms = Column(Float, nullable=True)
+    ping_max_ms = Column(Float, nullable=True)
 
     monitor = relationship("Monitor", back_populates="logs")

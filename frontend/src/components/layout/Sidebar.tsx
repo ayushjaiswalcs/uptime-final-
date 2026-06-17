@@ -2,29 +2,32 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Activity, AlertTriangle, Globe, Bell, BarChart2,
   Settings, LogOut, Radio, Users, Key, Wrench, ShieldCheck, Webhook,
+  FolderOpen, Building2, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import clsx from 'clsx'
 
 const navItems = [
-  { to: '/dashboard',   icon: LayoutDashboard, label: 'Overview'    },
-  { to: '/monitors',    icon: Activity,        label: 'Monitors'    },
-  { to: '/incidents',   icon: AlertTriangle,   label: 'Incidents'   },
-  { to: '/status-pages',icon: Globe,           label: 'Status Pages'},
-  { to: '/notifications',icon: Bell,           label: 'Alerts'      },
-  { to: '/reports',     icon: BarChart2,       label: 'Reports'     },
+  { to: '/dashboard',    icon: LayoutDashboard, label: 'Overview'     },
+  { to: '/monitors',     icon: Activity,        label: 'Monitors'     },
+  { to: '/incidents',    icon: AlertTriangle,   label: 'Incidents'    },
+  { to: '/status-pages', icon: Globe,           label: 'Status Pages' },
+  { to: '/notifications',icon: Bell,            label: 'Alerts'       },
+  { to: '/reports',      icon: BarChart2,       label: 'Reports'      },
 ]
 
-const teamItems = [
-  { to: '/teams',         icon: Users,     label: 'Teams'        },
-  { to: '/org-analytics', icon: BarChart2, label: 'Org Analytics'},
-  { to: '/maintenance',   icon: Wrench,    label: 'Maintenance'  },
+const orgItems = [
+  { to: '/teams',        icon: Building2,  label: 'Organizations' },
+  { to: '/projects',     icon: FolderOpen, label: 'Projects'      },
+  { to: '/org-analytics',icon: TrendingUp, label: 'Analytics'     },
+  { to: '/maintenance',  icon: Wrench,     label: 'Maintenance'   },
+  { to: '/members',      icon: Users,      label: 'Members'       },
 ]
 
 const devItems = [
-  { to: '/api-keys',    icon: Key,             label: 'API Keys'    },
-  { to: '/webhooks',    icon: Webhook,         label: 'Webhooks'    },
-  { to: '/audit-logs',  icon: ShieldCheck,     label: 'Audit Logs'  },
+  { to: '/api-keys',    icon: Key,         label: 'API Keys'   },
+  { to: '/webhooks',    icon: Webhook,     label: 'Webhooks'   },
+  { to: '/audit-logs',  icon: ShieldCheck, label: 'Audit Logs' },
 ]
 
 export default function Sidebar() {
@@ -66,11 +69,11 @@ export default function Sidebar() {
           ))}
         </div>
 
-        {/* Team */}
+        {/* Organization */}
         <div>
-          <p className="text-xs font-semibold text-subtle uppercase tracking-wider px-3 mb-1.5">Team</p>
+          <p className="text-xs font-semibold text-subtle uppercase tracking-wider px-3 mb-1.5">Organization</p>
           <div className="space-y-0.5">
-            {teamItems.map(({ to, icon: Icon, label }) => (
+            {orgItems.map(({ to, icon: Icon, label }) => (
               <NavLink key={to} to={to} className={({ isActive }) => clsx('sidebar-link', isActive && 'active')}>
                 <Icon className="w-4 h-4 flex-shrink-0" />{label}
               </NavLink>
