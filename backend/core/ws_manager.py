@@ -2,7 +2,7 @@
 import asyncio
 import json
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import WebSocket
 
@@ -14,7 +14,7 @@ class ConnectionManager:
         self.connections: Dict[int, List[WebSocket]] = {}
         # The running event loop — set once on first connect so threads can
         # schedule coroutines onto it via run_coroutine_threadsafe.
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def connect(self, user_id: int, websocket: WebSocket):
         await websocket.accept()

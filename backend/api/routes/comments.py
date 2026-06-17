@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -21,7 +21,7 @@ class CommentOut(BaseModel):
     user_id: int
     content: str
     created_at: str
-    user_name: str | None = None
+    user_name: Optional[str] = None
 
     class Config:
         from_attributes = True

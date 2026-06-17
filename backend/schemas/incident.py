@@ -10,6 +10,11 @@ class IncidentOut(BaseModel):
     recovery_time: Optional[datetime]
     error_message: Optional[str]
     incident_status: str
+    severity: Optional[str] = "medium"
+    title: Optional[str] = None
+    assigned_user_id: Optional[int] = None
+    assigned_team_id: Optional[int] = None
+    root_cause: Optional[str] = None
     monitor_name: Optional[str] = None
 
     class Config:

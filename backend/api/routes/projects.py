@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -40,7 +40,7 @@ def _enrich_project(project: Project, db: Session) -> ProjectOut:
 
 
 @router.get("", response_model=List[ProjectOut])
-def list_projects(org_id: int, team_id: int | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_projects(org_id: int, team_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _assert_org_access(org_id, current_user.id, db)
     q = db.query(Project).filter(Project.org_id == org_id)
     if team_id is not None:

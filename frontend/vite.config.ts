@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react'
 // Override with VITE_PROXY_TARGET if needed.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const target = env.VITE_PROXY_TARGET || 'http://localhost:8002'
+  const target = env.VITE_PROXY_TARGET || 'http://localhost:8000'
   const wsTarget = target.replace(/^http/, 'ws')
 
   return {

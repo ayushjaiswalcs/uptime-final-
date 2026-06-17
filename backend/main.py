@@ -11,6 +11,8 @@ from core.ws_manager import manager
 from api.routes import auth, monitors, incidents, notifications, dashboard, status_pages, admin
 from api.routes import api_keys, organizations, maintenance, webhooks, audit, reports
 from api.routes import teams as teams_router, projects as projects_router, comments as comments_router
+from api.routes import sla as sla_router, oncall as oncall_router, runbooks as runbooks_router
+from api.routes import apm as apm_router, compliance as compliance_router, costs as costs_router
 import models  # ensures all models are registered
 
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +69,12 @@ app.include_router(reports.router)
 app.include_router(teams_router.router)
 app.include_router(projects_router.router)
 app.include_router(comments_router.router)
+app.include_router(sla_router.router)
+app.include_router(oncall_router.router)
+app.include_router(runbooks_router.router)
+app.include_router(apm_router.router)
+app.include_router(compliance_router.router)
+app.include_router(costs_router.router)
 
 
 # manager is imported from core.ws_manager — shared with monitoring engine

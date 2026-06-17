@@ -31,6 +31,12 @@ import OrgAnalytics from './pages/OrgAnalytics'
 import Projects from './pages/Projects'
 import Members from './pages/Members'
 import Demo from './pages/Demo'
+import SlaManagement from './pages/SlaManagement'
+import OnCall from './pages/OnCall'
+import Runbooks from './pages/Runbooks'
+import ApmDashboard from './pages/ApmDashboard'
+import ComplianceCenter from './pages/ComplianceCenter'
+import CostMonitoring from './pages/CostMonitoring'
 import Layout from './components/layout/Layout'
 
 // Drives React Query cache updates during demo simulation
@@ -96,6 +102,12 @@ function AppRoutes() {
           ['/org-analytics', <OrgAnalytics />],
           ['/projects',      <Projects />],
           ['/members',       <Members />],
+          ['/sla',           <SlaManagement />],
+          ['/oncall',        <OnCall />],
+          ['/runbooks',      <Runbooks />],
+          ['/apm',           <ApmDashboard />],
+          ['/compliance',    <ComplianceCenter />],
+          ['/costs',         <CostMonitoring />],
         ] as [string, React.ReactNode][]
       ).map(([path, page]) => (
         <Route
