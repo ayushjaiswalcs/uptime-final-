@@ -651,6 +651,12 @@ def check_monitor(monitor_id: int) -> None:
                 "Incident OPENED monitor=%s name=%r after %s consecutive failure(s): %s",
                 monitor.id, monitor.monitor_name, threshold, error,
             )
+            # Engage the severity-based escalation matrix for this outage.
+            try:
+                from core.escalation_engine import trigger_escalation
+                trigger_escalation(db, incident, monitor, error)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Escalation trigger failed for incident %s: %s", incident.id, exc, exc_info=True)
             _send_alerts(db, monitor, "down", error)
             down_payload = {
                 "event": "monitor.down",
@@ -692,6 +698,12 @@ def check_monitor(monitor_id: int) -> None:
                     "Incident RESOLVED monitor=%s name=%r (incident_id=%s)",
                     monitor.id, monitor.monitor_name, open_incident.id,
                 )
+                # Halt any in-flight escalation for the resolved incident.
+                try:
+                    from core.escalation_engine import stop_escalation
+                    stop_escalation(db, open_incident)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("Escalation stop failed for incident %s: %s", open_incident.id, exc, exc_info=True)
             _send_alerts(db, monitor, "up", None)
             _deliver_webhooks(db, monitor.user_id, "monitor.up", {
                 "event": "monitor.up",

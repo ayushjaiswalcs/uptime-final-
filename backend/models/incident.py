@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Index
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Index, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -25,6 +25,15 @@ class Incident(Base):
     assigned_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     root_cause = Column(Text, nullable=True)
     title = Column(String(255), nullable=True)
+
+    # --- Escalation run-state (driven by the escalation engine) -------------
+    # Live cursor for the active escalation; NULL/0 when no policy is engaged.
+    escalation_config_id = Column(Integer, ForeignKey("escalation_configs.id", ondelete="SET NULL"), nullable=True)
+    escalation_level = Column(Integer, default=0, server_default="0")   # current level number, 0 = none
+    escalation_active = Column(Boolean, default=False, server_default="false")
+    # When the engine should advance to the next level (NULL once final level
+    # reached or escalation inactive).
+    next_escalation_at = Column(DateTime(timezone=True), nullable=True)
 
     monitor = relationship("Monitor", back_populates="incidents")
     assigned_team = relationship("Team", foreign_keys=[assigned_team_id])

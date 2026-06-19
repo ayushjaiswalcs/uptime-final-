@@ -37,6 +37,9 @@ import Runbooks from './pages/Runbooks'
 import ApmDashboard from './pages/ApmDashboard'
 import ComplianceCenter from './pages/ComplianceCenter'
 import CostMonitoring from './pages/CostMonitoring'
+import EscalationMatrix from './pages/EscalationMatrix'
+import EscalationHistory from './pages/EscalationHistory'
+import NotificationLogs from './pages/NotificationLogs'
 import Layout from './components/layout/Layout'
 
 // Drives React Query cache updates during demo simulation
@@ -104,6 +107,9 @@ function AppRoutes() {
           ['/members',       <Members />],
           ['/sla',           <SlaManagement />],
           ['/oncall',        <OnCall />],
+          ['/escalation',    <EscalationMatrix />],
+          ['/escalation-history', <EscalationHistory />],
+          ['/notification-logs',  <NotificationLogs />],
           ['/runbooks',      <Runbooks />],
           ['/apm',           <ApmDashboard />],
           ['/compliance',    <ComplianceCenter />],

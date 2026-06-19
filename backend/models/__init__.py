@@ -19,6 +19,7 @@ from models.runbook import Runbook, RunbookStep
 from models.apm import APMTransaction, APMError, WebVital
 from models.compliance import ComplianceFramework, ComplianceControl, ComplianceAssessment, DataRetentionPolicy
 from models.cost import CloudCostEntry, BudgetAlert, ResourceInventory
+from models.escalation import EscalationConfig, EscalationLevel, EscalationChannel, EscalationHistory
 
 __all__ = [
     "User", "Monitor", "MonitorLog", "Incident", "Notification", "StatusPage",
@@ -32,4 +33,5 @@ __all__ = [
     "APMTransaction", "APMError", "WebVital",
     "ComplianceFramework", "ComplianceControl", "ComplianceAssessment", "DataRetentionPolicy",
     "CloudCostEntry", "BudgetAlert", "ResourceInventory",
+    "EscalationConfig", "EscalationLevel", "EscalationChannel", "EscalationHistory",
 ]

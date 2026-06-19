@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Activity, AlertTriangle, Globe, Bell, BarChart2,
   Settings, LogOut, Radio, Users, Key, Wrench, ShieldCheck, Webhook,
   FolderOpen, Building2, TrendingUp, Target, Phone, BookOpen,
-  Cpu, Lock, DollarSign, ChevronDown, ChevronsDownUp, ChevronsUpDown
+  Cpu, Lock, DollarSign, ChevronDown, ChevronsDownUp, ChevronsUpDown,
+  Siren, History, MessageSquare
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import clsx from 'clsx'
@@ -19,10 +20,13 @@ const navItems = [
 ]
 
 const observabilityItems = [
-  { to: '/apm',         icon: Cpu,          label: 'APM'          },
-  { to: '/sla',         icon: Target,       label: 'SLA / SLO'    },
-  { to: '/oncall',      icon: Phone,        label: 'On-Call'      },
-  { to: '/runbooks',    icon: BookOpen,     label: 'Runbooks'     },
+  { to: '/apm',                icon: Cpu,           label: 'APM'                },
+  { to: '/sla',                icon: Target,        label: 'SLA / SLO'          },
+  { to: '/oncall',             icon: Phone,         label: 'On-Call'            },
+  { to: '/escalation',         icon: Siren,         label: 'Escalation Matrix'  },
+  { to: '/escalation-history', icon: History,       label: 'Escalation History' },
+  { to: '/notification-logs',  icon: MessageSquare, label: 'Notification Logs'  },
+  { to: '/runbooks',           icon: BookOpen,      label: 'Runbooks'           },
 ]
 
 const orgItems = [

@@ -60,6 +60,12 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    # Seed the default NORMAL/WARNING/CRITICAL escalation matrix for the new user.
+    try:
+        from core.escalation_seed import seed_default_matrix_for_user
+        seed_default_matrix_for_user(db, user.id)
+    except Exception:  # noqa: BLE001 — seeding must never block signup
+        db.rollback()
     _send_verification_email(user)
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
