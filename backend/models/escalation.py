@@ -46,6 +46,7 @@ class EscalationConfig(Base):
     name = Column(String(255), nullable=False)
     severity = Column(String(20), nullable=False, default="NORMAL")  # NORMAL | WARNING | CRITICAL
     description = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="active", server_default="active")  # active | inactive | draft
     is_active = Column(Boolean, default=True, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

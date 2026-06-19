@@ -30,9 +30,12 @@ class Monitor(Base):
     dns_record_type = Column(String(10), nullable=True, server_default="A")  # A, AAAA, CNAME, MX
     failure_count = Column(Integer, default=0, server_default="0")  # consecutive failures
     alert_threshold = Column(Integer, default=1, server_default="1")  # alert after N failures
+    # Directly-assigned escalation matrix (overrides severity-based lookup).
+    escalation_config_id = Column(Integer, ForeignKey("escalation_configs.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_checked_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], back_populates="monitors")
+    escalation_config = relationship("EscalationConfig", foreign_keys=[escalation_config_id], lazy="select")
     logs = relationship("MonitorLog", back_populates="monitor", cascade="all, delete-orphan")
     incidents = relationship("Incident", back_populates="monitor", cascade="all, delete-orphan")

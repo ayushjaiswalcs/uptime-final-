@@ -13,10 +13,25 @@ logger = logging.getLogger("uptime.monitors")
 from models.user import User
 from models.monitor import Monitor
 from models.monitor_log import MonitorLog
+from models.escalation import EscalationConfig
 from schemas.monitor import MonitorCreate, MonitorUpdate, MonitorOut, MonitorLogOut
 from models.incident import Incident
 
 router = APIRouter(prefix="/monitors", tags=["monitors"])
+
+
+def _attach_matrix_names(db: Session, monitors: list) -> None:
+    """Populate _escalation_matrix_name on each monitor ORM object (one batch query)."""
+    config_ids = {m.escalation_config_id for m in monitors if m.escalation_config_id}
+    if not config_ids:
+        return
+    name_map = {
+        c.id: c.name
+        for c in db.query(EscalationConfig).filter(EscalationConfig.id.in_(config_ids)).all()
+    }
+    for m in monitors:
+        if m.escalation_config_id:
+            m._escalation_matrix_name = name_map.get(m.escalation_config_id)
 
 
 @router.get("", response_model=List[MonitorOut])
@@ -25,17 +40,18 @@ def list_monitors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Admin/owner can pass ?all=true to see every monitor across all users.
     if all and current_user.role in ("admin", "owner"):
         monitors = db.query(Monitor).order_by(desc(Monitor.created_at)).all()
-        # Attach owner name so the frontend can show it.
         user_map = {u.id: u.name for u in db.query(User).filter(
             User.id.in_({m.user_id for m in monitors})
         ).all()}
         for m in monitors:
             m._owner_name = user_map.get(m.user_id, "Unknown")
+        _attach_matrix_names(db, monitors)
         return monitors
-    return db.query(Monitor).filter(Monitor.user_id == current_user.id).order_by(desc(Monitor.created_at)).all()
+    monitors = db.query(Monitor).filter(Monitor.user_id == current_user.id).order_by(desc(Monitor.created_at)).all()
+    _attach_matrix_names(db, monitors)
+    return monitors
 
 
 @router.post("", response_model=MonitorOut, status_code=201)

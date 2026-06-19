@@ -1,415 +1,571 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertOctagon, Plus, Trash2, Copy, Power, Pencil, Globe, MessageCircle,
-  Smartphone, PhoneCall, Mail, Webhook, Check, X, Clock, Shield,
+  AlertOctagon, Plus, Trash2, Copy, Pencil, Search, Eye,
+  Shield, X, Layers, Clock, Monitor, ArrowUpDown, ArrowUp, ArrowDown,
+  CheckSquare, Square, ChevronDown,
 } from 'lucide-react'
 import {
-  escalationApi, type EscalationConfig, type EscalationLevel, type Severity,
-  type Channel, type LevelInput, CHANNELS,
+  escalationApi,
+  type EscalationConfig,
+  type EscalationStatus,
+  type Severity,
 } from '../api/escalation'
+import { monitorsApi, type Monitor as MonitorType } from '../api/monitors'
 import Header from '../components/layout/Header'
 import { useToast } from '../context/ToastContext'
 import clsx from 'clsx'
 
-const SEVERITY_META: Record<Severity, { label: string; cls: string; dot: string }> = {
-  NORMAL:   { label: 'NORMAL',   cls: 'text-blue-400 border-blue-500/30 bg-blue-500/10',     dot: 'bg-blue-400' },
-  WARNING:  { label: 'WARNING',  cls: 'text-amber-400 border-amber-500/30 bg-amber-500/10',  dot: 'bg-amber-400' },
-  CRITICAL: { label: 'CRITICAL', cls: 'text-red-400 border-red-500/30 bg-red-500/10',        dot: 'bg-red-400' },
+const STATUS_META: Record<EscalationStatus, { label: string; dot: string; cls: string }> = {
+  active:   { label: 'Active',   dot: 'bg-green-400',  cls: 'text-green-400  bg-green-500/10  border-green-500/30'  },
+  inactive: { label: 'Inactive', dot: 'bg-slate-400',  cls: 'text-slate-400  bg-slate-500/10  border-slate-500/30'  },
+  draft:    { label: 'Draft',    dot: 'bg-amber-400',  cls: 'text-amber-400  bg-amber-500/10  border-amber-500/30'  },
 }
 
-// Columns shown inline in the matrix table (spec: Web/WhatsApp/SMS/Call).
-const TABLE_CHANNELS: { key: Channel; label: string; icon: any }[] = [
-  { key: 'web',      label: 'Web',      icon: Globe },
-  { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
-  { key: 'sms',      label: 'SMS',      icon: Smartphone },
-  { key: 'call',     label: 'Call',     icon: PhoneCall },
-]
-
-const ALL_CHANNEL_META: Record<Channel, { label: string; icon: any }> = {
-  web:      { label: 'Web',      icon: Globe },
-  whatsapp: { label: 'WhatsApp', icon: MessageCircle },
-  sms:      { label: 'SMS',      icon: Smartphone },
-  call:     { label: 'Call',     icon: PhoneCall },
-  email:    { label: 'Email',    icon: Mail },
-  webhook:  { label: 'Webhook',  icon: Webhook },
+const SEVERITY_META: Record<Severity, { cls: string }> = {
+  NORMAL:   { cls: 'text-blue-400  bg-blue-500/10'   },
+  WARNING:  { cls: 'text-amber-400 bg-amber-500/10'  },
+  CRITICAL: { cls: 'text-red-400   bg-red-500/10'    },
 }
 
-function fmtTimer(min: number | null) {
-  if (min === null || min === undefined) return 'Final'
-  return `${min} min`
+const STATUS_DOT: Record<string, string> = {
+  up:      'bg-green-400',
+  down:    'bg-red-400',
+  paused:  'bg-slate-400',
+  pending: 'bg-amber-400',
 }
+
+type SortKey = 'name' | 'status' | 'severity' | 'created_at' | 'total_monitors' | 'total_levels'
+type SortDir = 'asc' | 'desc'
+
+const PAGE_SIZE = 10
 
 export default function EscalationMatrix() {
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const { toast } = useToast()
-  const [filter, setFilter] = useState<Severity | 'ALL'>('ALL')
-  const [editingLevel, setEditingLevel] = useState<{ configId: number; level?: EscalationLevel; nextNumber: number } | null>(null)
-  const [showNewPolicy, setShowNewPolicy] = useState(false)
+
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<EscalationStatus | 'all'>('all')
+  const [severityFilter, setSeverityFilter] = useState<Severity | 'ALL'>('ALL')
+  const [sortKey, setSortKey] = useState<SortKey>('created_at')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [page, setPage] = useState(1)
+  const [showNewModal, setShowNewModal] = useState(false)
+  const [editConfig, setEditConfig] = useState<EscalationConfig | null>(null)
 
   const { data: configs = [], isLoading } = useQuery({
     queryKey: ['escalation-configs'],
     queryFn: () => escalationApi.listConfigs().then(r => r.data),
+    refetchInterval: 30_000,
   })
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['escalation-configs'] })
-    qc.invalidateQueries({ queryKey: ['escalation-stats'] })
-  }
 
-  const toggleConfig = useMutation({
-    mutationFn: (id: number) => escalationApi.toggleConfig(id),
-    onSuccess: () => { invalidate(); toast('Policy status updated', 'success') },
-  })
-  const cloneConfig = useMutation({
-    mutationFn: (id: number) => escalationApi.cloneConfig(id),
-    onSuccess: () => { invalidate(); toast('Policy cloned (starts disabled)', 'success') },
-  })
-  const deleteConfig = useMutation({
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['escalation-configs'] })
+
+  const deleteMut = useMutation({
     mutationFn: (id: number) => escalationApi.deleteConfig(id),
     onSuccess: () => { invalidate(); toast('Policy deleted', 'success') },
+    onError: () => toast('Delete failed', 'error'),
   })
-  const deleteLevel = useMutation({
-    mutationFn: (id: number) => escalationApi.deleteLevel(id),
-    onSuccess: () => { invalidate(); toast('Level removed', 'success') },
-  })
-  const toggleChannel = useMutation({
-    mutationFn: ({ level, channel }: { level: EscalationLevel; channel: Channel }) =>
-      escalationApi.setChannels(level.id, { [channel]: !level.channels[channel] }),
-    onSuccess: () => invalidate(),
+  const cloneMut = useMutation({
+    mutationFn: (id: number) => escalationApi.cloneConfig(id),
+    onSuccess: () => { invalidate(); toast('Policy cloned as draft', 'success') },
   })
 
-  const shown = filter === 'ALL' ? configs : configs.filter(c => c.severity === filter)
+  // Sort helper
+  const cycleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+    setPage(1)
+  }
+
+  // Filter + sort
+  const filtered = useMemo(() => {
+    let list = [...configs]
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(c => c.name.toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q))
+    }
+    if (statusFilter !== 'all') list = list.filter(c => c.status === statusFilter)
+    if (severityFilter !== 'ALL') list = list.filter(c => c.severity === severityFilter)
+
+    list.sort((a, b) => {
+      let av: any, bv: any
+      switch (sortKey) {
+        case 'name':           av = a.name; bv = b.name; break
+        case 'status':         av = a.status; bv = b.status; break
+        case 'severity':       av = a.severity; bv = b.severity; break
+        case 'created_at':     av = a.created_at; bv = b.created_at; break
+        case 'total_monitors': av = a.total_monitors ?? 0; bv = b.total_monitors ?? 0; break
+        case 'total_levels':   av = a.total_levels ?? 0; bv = b.total_levels ?? 0; break
+        default:               av = a.created_at; bv = b.created_at
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1
+      if (av > bv) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return list
+  }, [configs, search, statusFilter, severityFilter, sortKey, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const SortIcon = ({ col }: { col: SortKey }) =>
+    sortKey !== col
+      ? <ArrowUpDown className="w-3 h-3 opacity-40" />
+      : sortDir === 'asc'
+        ? <ArrowUp className="w-3 h-3 text-primary-400" />
+        : <ArrowDown className="w-3 h-3 text-primary-400" />
 
   return (
-    <div className="p-6 space-y-6">
-      <Header title="Escalation Matrix" action={{ label: 'New Policy', onClick: () => setShowNewPolicy(true) }} />
+    <div className="p-6 space-y-5">
+      <Header
+        title="Escalation Matrix"
+        action={{ label: 'New Policy', onClick: () => setShowNewModal(true) }}
+      />
 
-      {/* Severity filter */}
-      <div className="flex items-center gap-1 bg-slate-800/50 rounded-xl p-1 w-fit">
-        {(['ALL', 'NORMAL', 'WARNING', 'CRITICAL'] as const).map(s => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            className={clsx(
-              'px-4 py-1.5 rounded-lg text-sm font-medium transition-all',
-              filter === s ? 'bg-primary-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            )}
-          >
-            {s === 'ALL' ? 'All Severities' : SEVERITY_META[s].label}
-          </button>
-        ))}
+      {/* Summary chips */}
+      <div className="flex flex-wrap gap-3">
+        {(['active', 'inactive', 'draft'] as EscalationStatus[]).map(s => {
+          const count = configs.filter(c => c.status === s).length
+          const m = STATUS_META[s]
+          return (
+            <button
+              key={s}
+              onClick={() => { setStatusFilter(statusFilter === s ? 'all' : s); setPage(1) }}
+              className={clsx(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all',
+                statusFilter === s ? m.cls : 'border-[var(--border)] text-muted hover:border-[var(--border-strong)]'
+              )}
+            >
+              <span className={clsx('w-2 h-2 rounded-full', m.dot)} />
+              {m.label}: <span className="font-bold">{count}</span>
+            </button>
+          )
+        })}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border)] text-sm text-muted">
+          <Shield className="w-3.5 h-3.5" />Total: <span className="font-bold text-[var(--text)]">{configs.length}</span>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border)] text-sm text-muted">
+          <Monitor className="w-3.5 h-3.5" />
+          Monitors attached: <span className="font-bold text-[var(--text)]">
+            {configs.reduce((s, c) => s + (c.total_monitors ?? 0), 0)}
+          </span>
+        </div>
       </div>
 
-      {isLoading ? (
-        <div className="glass-card p-12 text-center text-muted">Loading matrix…</div>
-      ) : shown.length === 0 ? (
-        <div className="glass-card p-12 text-center">
-          <AlertOctagon className="w-12 h-12 text-muted mx-auto mb-3" />
-          <p className="text-muted">No escalation policies yet</p>
-          <p className="text-sm text-subtle mt-1">Defaults seed automatically — or create a custom policy.</p>
+      {/* Filters row */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
+          <input
+            className="input-field pl-9 w-full text-sm"
+            placeholder="Search by title or description…"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
+          />
         </div>
-      ) : (
-        <div className="space-y-6">
-          {shown.map(config => (
-            <PolicyCard
-              key={config.id}
-              config={config}
-              onToggle={() => toggleConfig.mutate(config.id)}
-              onClone={() => cloneConfig.mutate(config.id)}
-              onDelete={() => { if (confirm(`Delete policy "${config.name}"?`)) deleteConfig.mutate(config.id) }}
-              onAddLevel={() => setEditingLevel({
-                configId: config.id,
-                nextNumber: Math.max(0, ...config.levels.map(l => l.level_number)) + 1,
-              })}
-              onEditLevel={(level) => setEditingLevel({ configId: config.id, level, nextNumber: level.level_number })}
-              onDeleteLevel={(id) => deleteLevel.mutate(id)}
-              onToggleChannel={(level, channel) => toggleChannel.mutate({ level, channel })}
-            />
+
+        <div className="flex items-center gap-0.5 bg-slate-800/60 rounded-xl p-1 border border-[var(--border)]">
+          {(['all', 'active', 'inactive', 'draft'] as const).map(s => (
+            <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
+              className={clsx('px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all',
+                statusFilter === s ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5')}>
+              {s === 'all' ? 'All Status' : s}
+            </button>
           ))}
         </div>
-      )}
 
-      {editingLevel && (
-        <LevelModal
-          configId={editingLevel.configId}
-          level={editingLevel.level}
-          nextNumber={editingLevel.nextNumber}
-          onClose={() => setEditingLevel(null)}
-          onSaved={() => { setEditingLevel(null); invalidate() }}
-        />
+        <div className="flex items-center gap-0.5 bg-slate-800/60 rounded-xl p-1 border border-[var(--border)]">
+          {(['ALL', 'NORMAL', 'WARNING', 'CRITICAL'] as const).map(s => (
+            <button key={s} onClick={() => { setSeverityFilter(s); setPage(1) }}
+              className={clsx('px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                severityFilter === s ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5')}>
+              {s === 'ALL' ? 'All' : s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="glass-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[860px]">
+            <thead>
+              <tr className="border-b border-[var(--border)] bg-white/[0.02]">
+                {[
+                  { label: 'Title',           key: 'name'           as SortKey },
+                  { label: 'Description',     key: null },
+                  { label: 'Status',          key: 'status'         as SortKey },
+                  { label: 'Severity',        key: 'severity'       as SortKey },
+                  { label: 'Levels',          key: 'total_levels'   as SortKey },
+                  { label: 'Monitors',        key: 'total_monitors' as SortKey },
+                  { label: 'Created By',      key: null },
+                  { label: 'Created Date',    key: 'created_at'     as SortKey },
+                  { label: 'Actions',         key: null },
+                ].map(({ label, key }) => (
+                  <th
+                    key={label}
+                    onClick={key ? () => cycleSort(key) : undefined}
+                    className={clsx(
+                      'px-4 py-3 text-left text-xs font-semibold text-subtle uppercase tracking-wider whitespace-nowrap',
+                      key && 'cursor-pointer hover:text-[var(--text)] select-none'
+                    )}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {label}
+                      {key && <SortIcon col={key} />}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)]">
+              {isLoading ? (
+                <tr><td colSpan={9} className="px-4 py-14 text-center">
+                  <div className="flex flex-col items-center gap-2 text-muted">
+                    <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm">Loading policies…</span>
+                  </div>
+                </td></tr>
+              ) : paged.length === 0 ? (
+                <tr><td colSpan={9} className="px-4 py-14 text-center">
+                  <AlertOctagon className="w-10 h-10 text-muted mx-auto mb-3" />
+                  <p className="text-muted text-sm font-medium">No policies found</p>
+                  <p className="text-subtle text-xs mt-1">
+                    {search || statusFilter !== 'all' || severityFilter !== 'ALL'
+                      ? 'Try adjusting your filters' : 'Click "New Policy" to get started'}
+                  </p>
+                </td></tr>
+              ) : paged.map(config => (
+                <PolicyRow
+                  key={config.id}
+                  config={config}
+                  onView={() => navigate(`/escalation/${config.id}`)}
+                  onEdit={() => setEditConfig(config)}
+                  onClone={() => cloneMut.mutate(config.id)}
+                  onDelete={() => {
+                    if (confirm(`Delete "${config.name}"? This cannot be undone.`)) deleteMut.mutate(config.id)
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border)] bg-white/[0.01]">
+            <p className="text-xs text-muted">
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </p>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 disabled:opacity-40 hover:bg-slate-700 transition-colors">
+                Prev
+              </button>
+              {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(p => (
+                <button key={p} onClick={() => setPage(p)}
+                  className={clsx('w-8 h-8 rounded-lg text-xs font-medium transition-colors',
+                    page === p ? 'bg-primary-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700')}>
+                  {p}
+                </button>
+              ))}
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 disabled:opacity-40 hover:bg-slate-700 transition-colors">
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showNewModal && (
+        <PolicyModal onClose={() => setShowNewModal(false)} onSaved={() => { setShowNewModal(false); invalidate() }} />
       )}
-      {showNewPolicy && (
-        <PolicyModal onClose={() => setShowNewPolicy(false)} onSaved={() => { setShowNewPolicy(false); invalidate() }} />
+      {editConfig && (
+        <PolicyModal existing={editConfig} onClose={() => setEditConfig(null)} onSaved={() => { setEditConfig(null); invalidate() }} />
       )}
     </div>
   )
 }
 
-function PolicyCard({ config, onToggle, onClone, onDelete, onAddLevel, onEditLevel, onDeleteLevel, onToggleChannel }: {
+// ─── Table row ────────────────────────────────────────────────────────────────
+
+function PolicyRow({ config, onView, onEdit, onClone, onDelete }: {
   config: EscalationConfig
-  onToggle: () => void
-  onClone: () => void
-  onDelete: () => void
-  onAddLevel: () => void
-  onEditLevel: (level: EscalationLevel) => void
-  onDeleteLevel: (id: number) => void
-  onToggleChannel: (level: EscalationLevel, channel: Channel) => void
+  onView: () => void; onEdit: () => void; onClone: () => void; onDelete: () => void
 }) {
-  const meta = SEVERITY_META[config.severity]
+  const status = config.status ?? (config.is_active ? 'active' : 'inactive')
+  const sm = STATUS_META[status as EscalationStatus] ?? STATUS_META.inactive
+  const sevm = SEVERITY_META[config.severity] ?? SEVERITY_META.NORMAL
+
   return (
-    <div className="glass-card overflow-hidden">
-      {/* Policy header */}
-      <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
-        <div className="flex items-center gap-3">
-          <span className={clsx('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border', meta.cls)}>
-            <span className={clsx('w-1.5 h-1.5 rounded-full', meta.dot)} />{meta.label}
-          </span>
+    <tr className="hover:bg-white/[0.025] transition-colors group">
+      <td className="px-4 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center flex-shrink-0">
+            <Shield className="w-4 h-4 text-primary-400" />
+          </div>
           <div>
-            <p className="font-semibold app-title flex items-center gap-2">
-              {config.name}
-              {config.is_default && <span className="text-[10px] uppercase tracking-wider text-subtle border border-[var(--border)] rounded px-1.5 py-0.5">Default</span>}
-            </p>
-            <p className="text-xs text-muted">
-              {config.monitor_id ? `Monitor #${config.monitor_id}` : 'All monitors'} · {config.levels.length} levels
-            </p>
+            <p className="font-semibold app-title text-sm">{config.name}</p>
+            {config.is_default && <span className="text-[10px] text-subtle font-medium uppercase">Default</span>}
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={onToggle} title={config.is_active ? 'Disable' : 'Enable'}
-            className={clsx('p-2 rounded-lg transition-colors', config.is_active ? 'text-green-400 hover:bg-green-500/10' : 'text-slate-500 hover:bg-slate-500/10')}>
-            <Power className="w-4 h-4" />
-          </button>
-          <button onClick={onClone} title="Clone policy" className="p-2 text-primary-400 hover:bg-primary-500/10 rounded-lg transition-colors">
-            <Copy className="w-4 h-4" />
-          </button>
-          <button onClick={onAddLevel} className="btn-secondary text-xs flex items-center gap-1.5">
-            <Plus className="w-3.5 h-3.5" />Add Level
-          </button>
-          <button onClick={onDelete} title="Delete policy" className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
-            <Trash2 className="w-4 h-4" />
-          </button>
+      </td>
+      <td className="px-4 py-3.5 max-w-[180px]">
+        <p className="text-xs text-muted truncate">{config.description || '—'}</p>
+      </td>
+      <td className="px-4 py-3.5">
+        <span className={clsx('inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border', sm.cls)}>
+          <span className={clsx('w-1.5 h-1.5 rounded-full', sm.dot)} />{sm.label}
+        </span>
+      </td>
+      <td className="px-4 py-3.5">
+        <span className={clsx('text-xs font-bold px-2 py-0.5 rounded-md', sevm.cls)}>{config.severity}</span>
+      </td>
+      <td className="px-4 py-3.5">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary-400">
+          <Layers className="w-3 h-3" />{config.total_levels ?? config.levels.length}
+        </span>
+      </td>
+      <td className="px-4 py-3.5">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-cyan-400">
+          <Monitor className="w-3 h-3" />{config.total_monitors ?? 0}
+        </span>
+      </td>
+      <td className="px-4 py-3.5">
+        <span className="text-xs text-muted">{config.created_by || '—'}</span>
+      </td>
+      <td className="px-4 py-3.5 whitespace-nowrap">
+        <span className="text-xs text-muted">
+          {new Date(config.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </span>
+      </td>
+      <td className="px-4 py-3.5">
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {[
+            { Icon: Eye,    cls: 'text-primary-400 hover:bg-primary-500/10', title: 'View Details', fn: onView },
+            { Icon: Pencil, cls: 'text-slate-400 hover:bg-slate-500/10',   title: 'Edit',         fn: onEdit },
+            { Icon: Copy,   cls: 'text-slate-400 hover:bg-slate-500/10',   title: 'Clone',        fn: onClone },
+            { Icon: Trash2, cls: 'text-red-400 hover:bg-red-500/10',       title: 'Delete',       fn: onDelete },
+          ].map(({ Icon, cls, title, fn }) => (
+            <button key={title} onClick={fn} title={title} className={clsx('p-1.5 rounded-lg transition-colors', cls)}>
+              <Icon className="w-3.5 h-3.5" />
+            </button>
+          ))}
         </div>
-      </div>
-
-      {/* Matrix table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs font-semibold text-subtle uppercase tracking-wider border-b border-[var(--border)]">
-              <th className="px-4 py-2.5">Severity</th>
-              <th className="px-4 py-2.5">Level</th>
-              <th className="px-4 py-2.5">Escalation Name</th>
-              <th className="px-4 py-2.5">Timer</th>
-              {TABLE_CHANNELS.map(c => <th key={c.key} className="px-3 py-2.5 text-center">{c.label}</th>)}
-              <th className="px-4 py-2.5">Status</th>
-              <th className="px-4 py-2.5 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {config.levels.length === 0 && (
-              <tr><td colSpan={10} className="px-4 py-6 text-center text-muted">No levels — add L1 to start escalating.</td></tr>
-            )}
-            {config.levels.map(level => (
-              <tr key={level.id} className="border-b border-[var(--border)] last:border-0 hover:bg-white/[0.02]">
-                <td className="px-4 py-3">
-                  <span className={clsx('text-xs font-medium', SEVERITY_META[config.severity].cls.split(' ')[0])}>{config.severity}</span>
-                </td>
-                <td className="px-4 py-3 font-bold app-title">L{level.level_number}</td>
-                <td className="px-4 py-3 app-title">{level.escalation_name}</td>
-                <td className="px-4 py-3">
-                  <span className="inline-flex items-center gap-1 text-muted">
-                    <Clock className="w-3.5 h-3.5" />
-                    {level.timer_minutes === null
-                      ? <span className="text-purple-400 font-medium">Final</span>
-                      : fmtTimer(level.timer_minutes)}
-                  </span>
-                </td>
-                {TABLE_CHANNELS.map(c => (
-                  <td key={c.key} className="px-3 py-3 text-center">
-                    <button
-                      onClick={() => onToggleChannel(level, c.key)}
-                      className={clsx(
-                        'w-7 h-7 rounded-lg inline-flex items-center justify-center transition-colors',
-                        level.channels[c.key]
-                          ? 'bg-green-500/15 text-green-400 hover:bg-green-500/25'
-                          : 'bg-slate-500/10 text-slate-500 hover:bg-slate-500/20'
-                      )}
-                      title={`${c.label}: ${level.channels[c.key] ? 'ON' : 'OFF'}`}
-                    >
-                      {level.channels[c.key] ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                    </button>
-                  </td>
-                ))}
-                <td className="px-4 py-3">
-                  <span className={clsx('text-xs font-medium px-2 py-0.5 rounded-full',
-                    level.is_active ? 'text-green-400 bg-green-500/10' : 'text-slate-500 bg-slate-500/10')}>
-                    {level.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => onEditLevel(level)} className="p-1.5 text-primary-400 hover:bg-primary-500/10 rounded-lg transition-colors" title="Edit level">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => onDeleteLevel(level.id)} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Delete level">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      </td>
+    </tr>
   )
 }
 
-function LevelModal({ configId, level, nextNumber, onClose, onSaved }: {
-  configId: number
-  level?: EscalationLevel
-  nextNumber: number
+// ─── Create / Edit modal ──────────────────────────────────────────────────────
+
+function PolicyModal({ existing, onClose, onSaved }: {
+  existing?: EscalationConfig | null
   onClose: () => void
   onSaved: () => void
 }) {
   const { toast } = useToast()
-  const isEdit = !!level
-  const [name, setName] = useState(level?.escalation_name ?? '')
-  const [isFinal, setIsFinal] = useState(level ? level.timer_minutes === null : false)
-  const [timer, setTimer] = useState<number>(level?.timer_minutes ?? 5)
-  const [target, setTarget] = useState(level?.notify_target ?? '')
-  const [isActive, setIsActive] = useState(level?.is_active ?? true)
-  const [channels, setChannels] = useState<Record<Channel, boolean>>(
-    level?.channels ?? { web: true, whatsapp: false, sms: false, call: false, email: false, webhook: false }
+  const qc = useQueryClient()
+  const isEdit = !!existing
+
+  const [name, setName] = useState(existing?.name ?? '')
+  const [severity, setSeverity] = useState<Severity>(existing?.severity ?? 'CRITICAL')
+  const [status, setStatus] = useState<EscalationStatus>(existing?.status ?? 'active')
+  const [description, setDescription] = useState(existing?.description ?? '')
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [originalIds, setOriginalIds] = useState<Set<number>>(new Set())
+  const [monitorSearch, setMonitorSearch] = useState('')
+  const [monitorDropOpen, setMonitorDropOpen] = useState(false)
+
+  // Load all user monitors
+  const { data: allMonitors = [] } = useQuery({
+    queryKey: ['monitors'],
+    queryFn: () => monitorsApi.list().then(r => r.data),
+  })
+
+  // Load currently attached monitors (edit mode)
+  const { data: attachedMonitors = [] } = useQuery({
+    queryKey: ['escalation-config-monitors', existing?.id],
+    queryFn: () => escalationApi.listConfigMonitors(existing!.id).then(r => r.data),
+    enabled: isEdit && !!existing?.id,
+    onSuccess: (data) => {
+      const ids = new Set(data.map((m: any) => m.id))
+      setSelectedIds(ids)
+      setOriginalIds(ids)
+    },
+  } as any)
+
+  const visibleMonitors = allMonitors.filter(m =>
+    !monitorSearch || m.monitor_name.toLowerCase().includes(monitorSearch.toLowerCase()) ||
+    m.target_url.toLowerCase().includes(monitorSearch.toLowerCase())
   )
+
+  const toggleMonitor = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
 
   const save = useMutation({
     mutationFn: async () => {
-      const payload: LevelInput = {
-        level_number: nextNumber,
-        escalation_name: name,
-        timer_minutes: isFinal ? null : Number(timer),
-        notify_target: target || null,
-        is_active: isActive,
-        channels,
-      }
+      let configId: number
       if (isEdit) {
-        await escalationApi.updateLevel(level!.id, payload)
-        await escalationApi.setChannels(level!.id, channels)
+        await escalationApi.updateConfig(existing!.id, { name, severity, status, description })
+        configId = existing!.id
       } else {
-        await escalationApi.addLevel(configId, payload)
+        const res = await escalationApi.createConfig({ name, severity, status, description })
+        configId = res.data.id
       }
+
+      // Diff: attach new, detach removed
+      const toAttach = [...selectedIds].filter(id => !originalIds.has(id))
+      const toDetach = [...originalIds].filter(id => !selectedIds.has(id))
+      await Promise.all([
+        ...toAttach.map(id => escalationApi.attachMonitor(configId, id)),
+        ...toDetach.map(id => escalationApi.detachMonitor(configId, id)),
+      ])
     },
-    onSuccess: () => { toast(isEdit ? 'Level updated' : 'Level added', 'success'); onSaved() },
+    onSuccess: () => {
+      toast(isEdit ? 'Policy updated' : 'Policy created', 'success')
+      qc.invalidateQueries({ queryKey: ['monitors'] })
+      onSaved()
+    },
     onError: (e: any) => toast(e?.response?.data?.detail ?? 'Save failed', 'error'),
   })
 
+  const LABEL = 'text-xs font-semibold text-subtle uppercase tracking-wider block mb-1.5'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="glass-card w-full max-w-lg p-6 space-y-4" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="glass-card w-full max-w-xl p-6 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold app-title flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-primary-400" />
-            {isEdit ? `Edit Level L${level!.level_number}` : `Add Level L${nextNumber}`}
-          </h3>
-          <button onClick={onClose} className="p-1.5 text-muted hover:text-white"><X className="w-4 h-4" /></button>
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-subtle uppercase tracking-wider block mb-1.5">Escalation Name</label>
-          <input className="input-field w-full" placeholder="L1 On-call Engineer" value={name} onChange={e => setName(e.target.value)} />
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-subtle uppercase tracking-wider block mb-1.5">Notify Target (role / user / email)</label>
-          <input className="input-field w-full" placeholder="on-call@team.com" value={target} onChange={e => setTarget(e.target.value)} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-semibold text-subtle uppercase tracking-wider block mb-1.5">Timer (minutes)</label>
-            <input type="number" min={1} className="input-field w-full disabled:opacity-40" disabled={isFinal}
-              value={timer} onChange={e => setTimer(parseInt(e.target.value) || 0)} />
+            <h3 className="font-semibold app-title">{isEdit ? 'Edit Policy' : 'New Escalation Policy'}</h3>
           </div>
-          <div className="flex flex-col justify-end gap-2">
-            <label className="flex items-center gap-2 text-sm app-title cursor-pointer">
-              <input type="checkbox" checked={isFinal} onChange={e => setIsFinal(e.target.checked)} />
-              Final level (no timer)
-            </label>
-            <label className="flex items-center gap-2 text-sm app-title cursor-pointer">
-              <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
-              Active
-            </label>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-subtle uppercase tracking-wider block mb-2">Channels</label>
-          <div className="grid grid-cols-3 gap-2">
-            {CHANNELS.map(ch => {
-              const Icon = ALL_CHANNEL_META[ch].icon
-              const on = channels[ch]
-              return (
-                <button key={ch} onClick={() => setChannels(c => ({ ...c, [ch]: !c[ch] }))}
-                  className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors',
-                    on ? 'border-green-500/40 bg-green-500/10 text-green-400' : 'border-[var(--border)] text-muted hover:text-white')}>
-                  <Icon className="w-4 h-4" />{ALL_CHANNEL_META[ch].label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="flex gap-3 pt-2">
-          <button onClick={onClose} className="btn-secondary text-sm flex-1">Cancel</button>
-          <button onClick={() => save.mutate()} disabled={!name || save.isPending} className="btn-primary text-sm flex-1">
-            {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Level'}
+          <button onClick={onClose} className="p-1.5 text-muted hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+            <X className="w-4 h-4" />
           </button>
         </div>
-      </div>
-    </div>
-  )
-}
 
-function PolicyModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const { toast } = useToast()
-  const [name, setName] = useState('')
-  const [severity, setSeverity] = useState<Severity>('CRITICAL')
-  const [description, setDescription] = useState('')
+        {/* Name */}
+        <div>
+          <label className={LABEL}>Title</label>
+          <input className="input-field w-full" placeholder="e.g. Production CRITICAL Policy" value={name}
+            onChange={e => setName(e.target.value)} autoFocus />
+        </div>
 
-  const save = useMutation({
-    mutationFn: () => escalationApi.createConfig({ name, severity, description }),
-    onSuccess: () => { toast('Policy created — add levels next', 'success'); onSaved() },
-    onError: (e: any) => toast(e?.response?.data?.detail ?? 'Create failed', 'error'),
-  })
+        {/* Severity + Status */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={LABEL}>Severity</label>
+            <select className="input-field w-full" value={severity} onChange={e => setSeverity(e.target.value as Severity)}>
+              <option value="CRITICAL">CRITICAL</option>
+              <option value="WARNING">WARNING</option>
+              <option value="NORMAL">NORMAL</option>
+            </select>
+          </div>
+          <div>
+            <label className={LABEL}>Status</label>
+            <select className="input-field w-full" value={status} onChange={e => setStatus(e.target.value as EscalationStatus)}>
+              <option value="active">Active</option>
+              <option value="draft">Draft</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="glass-card w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold app-title">New Escalation Policy</h3>
-          <button onClick={onClose} className="p-1.5 text-muted hover:text-white"><X className="w-4 h-4" /></button>
-        </div>
+        {/* Description */}
         <div>
-          <label className="text-xs font-semibold text-subtle uppercase tracking-wider block mb-1.5">Policy Name</label>
-          <input className="input-field w-full" placeholder="Production CRITICAL" value={name} onChange={e => setName(e.target.value)} />
+          <label className={LABEL}>Description</label>
+          <textarea className="input-field w-full resize-none" rows={2}
+            placeholder="When does this policy apply?" value={description} onChange={e => setDescription(e.target.value)} />
         </div>
+
+        {/* Assigned Monitors */}
         <div>
-          <label className="text-xs font-semibold text-subtle uppercase tracking-wider block mb-1.5">Severity</label>
-          <select className="input-field w-full" value={severity} onChange={e => setSeverity(e.target.value as Severity)}>
-            <option value="NORMAL">NORMAL</option>
-            <option value="WARNING">WARNING</option>
-            <option value="CRITICAL">CRITICAL</option>
-          </select>
+          <label className={LABEL}>
+            Assigned Monitors
+            {selectedIds.size > 0 && (
+              <span className="ml-2 text-primary-400 normal-case font-normal">{selectedIds.size} selected</span>
+            )}
+          </label>
+          <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+            {/* Search */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)] bg-white/[0.02]">
+              <Search className="w-3.5 h-3.5 text-muted flex-shrink-0" />
+              <input
+                className="bg-transparent text-sm flex-1 outline-none placeholder:text-subtle"
+                placeholder="Search monitors…"
+                value={monitorSearch}
+                onChange={e => setMonitorSearch(e.target.value)}
+              />
+            </div>
+            {/* Monitor list */}
+            <div className="max-h-48 overflow-y-auto">
+              {allMonitors.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-muted">No monitors available</div>
+              ) : visibleMonitors.length === 0 ? (
+                <div className="px-4 py-4 text-center text-xs text-muted">No monitors match search</div>
+              ) : visibleMonitors.map(m => {
+                const checked = selectedIds.has(m.id)
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => toggleMonitor(m.id)}
+                    className={clsx(
+                      'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b border-[var(--border)] last:border-0',
+                      checked ? 'bg-primary-500/8' : 'hover:bg-white/[0.03]'
+                    )}
+                  >
+                    {checked
+                      ? <CheckSquare className="w-4 h-4 text-primary-400 flex-shrink-0" />
+                      : <Square className="w-4 h-4 text-muted flex-shrink-0" />
+                    }
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium app-title truncate">{m.monitor_name}</p>
+                      <p className="text-xs text-muted truncate">{m.monitor_type.toUpperCase()} · {m.target_url}</p>
+                    </div>
+                    <span className={clsx(
+                      'w-2 h-2 rounded-full flex-shrink-0',
+                      m.current_status === 'up' ? 'bg-green-400' :
+                      m.current_status === 'down' ? 'bg-red-400' : 'bg-slate-400'
+                    )} />
+                  </button>
+                )
+              })}
+            </div>
+            {selectedIds.size > 0 && (
+              <div className="px-4 py-2 border-t border-[var(--border)] bg-white/[0.02]">
+                <div className="flex flex-wrap gap-1.5">
+                  {[...selectedIds].map(id => {
+                    const mon = allMonitors.find(m => m.id === id)
+                    return mon ? (
+                      <span key={id} className="inline-flex items-center gap-1 text-xs bg-primary-500/15 text-primary-400 px-2 py-0.5 rounded-full">
+                        {mon.monitor_name}
+                        <button onClick={() => toggleMonitor(id)} className="hover:text-white">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ) : null
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-        <div>
-          <label className="text-xs font-semibold text-subtle uppercase tracking-wider block mb-1.5">Description</label>
-          <textarea className="input-field w-full" rows={2} value={description} onChange={e => setDescription(e.target.value)} />
-        </div>
-        <div className="flex gap-3 pt-2">
+
+        <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="btn-secondary text-sm flex-1">Cancel</button>
-          <button onClick={() => save.mutate()} disabled={!name || save.isPending} className="btn-primary text-sm flex-1">
-            {save.isPending ? 'Creating…' : 'Create Policy'}
+          <button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending} className="btn-primary text-sm flex-1">
+            {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Policy'}
           </button>
         </div>
       </div>

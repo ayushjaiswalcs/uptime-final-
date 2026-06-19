@@ -16,6 +16,7 @@ class MonitorCreate(BaseModel):
     keyword: Optional[str] = None
     dns_record_type: Optional[str] = None
     alert_threshold: int = 1
+    escalation_config_id: Optional[int] = None
     # Team / project assignment (optional)
     org_id: Optional[int] = None
     team_id: Optional[int] = None
@@ -35,6 +36,7 @@ class MonitorUpdate(BaseModel):
     keyword: Optional[str] = None
     dns_record_type: Optional[str] = None
     alert_threshold: Optional[int] = None
+    escalation_config_id: Optional[int] = None
 
 
 class MonitorOut(BaseModel):
@@ -56,6 +58,8 @@ class MonitorOut(BaseModel):
     failure_count: int = 0
     created_at: datetime
     last_checked_at: Optional[datetime] = None
+    escalation_config_id: Optional[int] = None
+    escalation_matrix_name: Optional[str] = None
     owner_name: Optional[str] = None
 
     class Config:
@@ -64,9 +68,10 @@ class MonitorOut(BaseModel):
     @classmethod
     def model_validate(cls, obj, *args, **kwargs):
         instance = super().model_validate(obj, *args, **kwargs)
-        # Pick up the transient _owner_name set by the admin list endpoint.
         if hasattr(obj, '_owner_name') and instance.owner_name is None:
             instance.owner_name = obj._owner_name
+        if hasattr(obj, '_escalation_matrix_name') and instance.escalation_matrix_name is None:
+            instance.escalation_matrix_name = obj._escalation_matrix_name
         return instance
 
 

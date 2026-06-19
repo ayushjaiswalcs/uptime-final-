@@ -38,6 +38,7 @@ import ApmDashboard from './pages/ApmDashboard'
 import ComplianceCenter from './pages/ComplianceCenter'
 import CostMonitoring from './pages/CostMonitoring'
 import EscalationMatrix from './pages/EscalationMatrix'
+import EscalationDetail from './pages/EscalationDetail'
 import EscalationHistory from './pages/EscalationHistory'
 import NotificationLogs from './pages/NotificationLogs'
 import Layout from './components/layout/Layout'
@@ -107,7 +108,8 @@ function AppRoutes() {
           ['/members',       <Members />],
           ['/sla',           <SlaManagement />],
           ['/oncall',        <OnCall />],
-          ['/escalation',    <EscalationMatrix />],
+          ['/escalation',       <EscalationMatrix />],
+          ['/escalation/:id',   <EscalationDetail />],
           ['/escalation-history', <EscalationHistory />],
           ['/notification-logs',  <NotificationLogs />],
           ['/runbooks',      <Runbooks />],

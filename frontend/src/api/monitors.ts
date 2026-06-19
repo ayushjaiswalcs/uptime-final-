@@ -20,6 +20,8 @@ export interface Monitor {
   created_at: string
   last_checked_at: string | null
   owner_name: string | null
+  escalation_config_id: number | null
+  escalation_matrix_name: string | null
 }
 
 export interface MonitorLog {
@@ -49,9 +51,22 @@ export interface MonitorCreate {
   keyword?: string
   dns_record_type?: string
   alert_threshold?: number
+  escalation_config_id?: number | null
   org_id?: number
   team_id?: number
   project_id?: number
+}
+
+export interface MonitorBrief {
+  id: number
+  monitor_name: string
+  monitor_type: string
+  monitor_type_label: string
+  target_url: string
+  current_status: string
+  is_paused: boolean
+  last_checked_at: string | null
+  escalation_config_id: number | null
 }
 
 export interface MetricBucket {

@@ -78,11 +78,24 @@ def incident_severity_label(matrix_severity: str) -> str:
 # Config lookup
 # --------------------------------------------------------------------------- #
 def _find_config(db, monitor: Monitor, severity: str) -> Optional[EscalationConfig]:
-    """Resolve the active config for (owner, severity).
+    """Resolve the active escalation config for this monitor.
 
-    A monitor-specific config wins over the owner's default (monitor_id IS NULL)
-    config for the same severity.
+    Priority order:
+    1. Directly assigned config via monitor.escalation_config_id (user's explicit choice)
+    2. Monitor-specific config by monitor_id + severity (legacy per-monitor override)
+    3. User's default config for this severity (global fallback, monitor_id IS NULL)
     """
+    # 1. Explicit assignment wins regardless of severity filter.
+    assigned_id = getattr(monitor, "escalation_config_id", None)
+    if assigned_id:
+        config = db.query(EscalationConfig).filter(
+            EscalationConfig.id == assigned_id,
+            EscalationConfig.is_active.is_(True),
+        ).first()
+        if config:
+            return config
+
+    # 2 & 3. Fall back to severity-based lookup.
     base = db.query(EscalationConfig).filter(
         EscalationConfig.user_id == monitor.user_id,
         EscalationConfig.severity == severity,

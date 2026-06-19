@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Activity, Plus, Pause, Play, Trash2, ExternalLink, Clock, Pencil, BarChart2, Users } from 'lucide-react'
+import { Activity, Plus, Pause, Play, Trash2, ExternalLink, Clock, Pencil, BarChart2, Users, Shield } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { monitorsApi, type Monitor } from '../api/monitors'
 import { useAuth } from '../context/AuthContext'
@@ -150,6 +150,17 @@ export default function Monitors() {
                     {m.interval >= 60 ? `${m.interval / 60}m` : `${m.interval}s`}
                   </span>
                   <span className="uppercase text-slate-600 font-medium">{m.monitor_type}</span>
+                  {m.escalation_matrix_name && (
+                    <Link
+                      to={`/escalation/${m.escalation_config_id}`}
+                      className="flex items-center gap-1 text-amber-400/80 hover:text-amber-300 transition-colors"
+                      title={`Escalation: ${m.escalation_matrix_name}`}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <Shield className="w-3 h-3" />
+                      <span className="truncate max-w-[120px]">{m.escalation_matrix_name}</span>
+                    </Link>
+                  )}
                 </div>
               </div>
 
